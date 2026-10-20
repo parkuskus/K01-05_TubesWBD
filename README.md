@@ -18,6 +18,7 @@ Fondasi aplikasi web pengelolaan database untuk Tugas Besar IF3110. Backend meng
 ```text
 cmd/web/             Entry point server
 internal/web/        Router, handler, dan halaman awal
+internal/contracts/  Tipe dan interface lintas modul
 internal/auth/       Authentication dan session (placeholder)
 internal/config/     Konfigurasi aplikasi (placeholder)
 internal/database/   Koneksi PostgreSQL dan database viewer (placeholder)
@@ -134,6 +135,18 @@ Browser
 ```
 
 Setiap request yang dilindungi harus diperiksa di backend. Menyembunyikan tombol di UI saja bukan kontrol akses.
+
+## Kontrak akses lintas modul (draft)
+
+Package `internal/contracts/` sudah menyediakan tipe `UserID`, `GroupID`, `DatabaseID`, `AccessLevel`, dan `DatabaseAction`, serta interface `Authorizer` dan `DatabaseProvider`. Helper kebijakan murninya dapat diuji tanpa database:
+
+- Akses efektif menggabungkan grant group dengan memilih tingkat tertinggi (`View + Edit` mengungguli `View Only`).
+- `View Only` mengizinkan melihat schema, data, dan riwayat migration.
+- `View + Edit` juga mengizinkan membuat, mengubah, dan menjalankan migration.
+- Grant atau aksi yang nilainya tidak dikenal ditolak (*fail closed*).
+- Pemeriksaan Platform Admin terpisah dari akses ke database target.
+
+**Status kebijakan: draft untuk ditinjau Aufar, Emil, dan Kevin.** Helper sudah mengikuti usulan “grant tertinggi menang”, tetapi aturan ini belum dianggap keputusan final tim. Implementasi repository authorization, session, dan provider koneksi belum tersedia. Nilai awal session yang diusulkan—idle 30 menit, absolute 12 jam, rotasi 15 menit, grace period 30 detik—juga belum diterapkan atau disepakati.
 
 ## Test dan pemeriksaan
 
