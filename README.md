@@ -2,14 +2,15 @@
 
 Fondasi aplikasi web pengelolaan database untuk Tugas Besar IF3110. Backend menggunakan Go, sedangkan halaman dirender di server. **Aplikasi ini tidak menggunakan SPA.**
 
-> Status saat ini masih berupa scaffold: server, halaman awal, aset CSS, dan satu test handler sudah tersedia. Autentikasi, authorization, koneksi PostgreSQL, database viewer, serta fitur migration belum diimplementasikan.
+> Status saat ini: login/logout, bootstrap admin pertama, session PostgreSQL, dan CSRF sudah terhubung ke server. Authorization group, database viewer, koneksi database target, dan fitur migration belum diimplementasikan.
 
 ## Tech stack
 
 - **Go 1.23 atau lebih baru** untuk backend.
 - **Templ** untuk membuat halaman HTML server-rendered.
 - **`net/http` dan `ServeMux`** dari standard library untuk HTTP server dan routing.
-- **PostgreSQL** sebagai DBMS target. `pgx/v5` direncanakan untuk koneksi database, tetapi belum terhubung pada scaffold ini.
+- **PostgreSQL** sebagai DBMS target dan storage session platform melalui `pgx/v5`.
+- **bcrypt** untuk hashing password; **Gorilla CSRF** untuk melindungi form state-changing.
 - **CSS biasa** untuk aset frontend; tidak ada frontend framework atau client-side router.
 - **`testing` dan `httptest`** dari Go untuk automated test.
 
@@ -17,14 +18,14 @@ Fondasi aplikasi web pengelolaan database untuk Tugas Besar IF3110. Backend meng
 
 ```text
 cmd/web/             Entry point server
-internal/web/        Router, handler, dan halaman awal
+internal/web/        Router, handler login/logout, dan halaman Templ
 internal/contracts/  Tipe dan interface lintas modul
-internal/auth/       Authentication dan session (placeholder)
-internal/config/     Konfigurasi aplikasi (placeholder)
+internal/auth/       Bootstrap admin, autentikasi, session PostgreSQL, dan CSRF
+internal/config/     Pembacaan `.env` dan validasi konfigurasi
 internal/database/   Koneksi PostgreSQL dan database viewer (placeholder)
 internal/migration/  Editor, eksekusi, dan riwayat migration (placeholder)
 internal/platform/   User, group, dan administrasi platform (placeholder)
-db/migrations/       Schema database milik platform (placeholder)
+db/migrations/       Schema user dan session database platform
 web/static/          CSS dan aset statis
 extra/               Dokumen pendukung lokal; seluruh folder diabaikan Git
 ```
@@ -37,7 +38,7 @@ Folder placeholder belum berisi implementasi. Pembagian tanggung jawab yang dius
 2. Jalankan perintah dari direktori root repository.
 3. Akses internet diperlukan saat pertama kali mengunduh dependency Go dan generator Templ.
 4. `make` opsional, hanya diperlukan jika ingin memakai target Makefile.
-5. PostgreSQL belum diperlukan untuk menjalankan scaffold saat ini. Database baru diperlukan setelah modul database terhubung.
+5. PostgreSQL lokal diperlukan untuk menjalankan aplikasi setelah wiring auth aktif. Buat database platform terpisah, misalnya `platform_dev`; jangan pakai database test atau database target pengguna.
 
 ## Menyiapkan proyek
 
@@ -46,6 +47,20 @@ Unduh dependency yang tercatat di `go.mod`:
 ```sh
 go mod download
 ```
+
+Salin `.env.example` menjadi `.env`, lalu atur `PLATFORM_DATABASE_URL`, `CSRF_AUTH_KEY`, `INITIAL_ADMIN_USERNAME`, dan `INITIAL_ADMIN_PASSWORD`. File `.env` dibaca saat startup jika tersedia; variabel environment proses tetap memiliki prioritas. Password admin awal hanya dibutuhkan ketika tabel `users` masih kosong.
+
+`CSRF_AUTH_KEY` harus berisi 64 karakter hex yang mewakili 32 byte acak. Buat lokal di PowerShell (jangan kirim atau commit hasilnya):
+
+```powershell
+$bytes = New-Object byte[] 32
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+[BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+$rng.Dispose()
+```
+
+Saat tabel user kosong, isi `INITIAL_ADMIN_USERNAME` dan `INITIAL_ADMIN_PASSWORD` dengan kredensial admin pertama. Setelah aplikasi berhasil start dan akun dibuat, hapus kedua nilai itu dari `.env`; akun tersimpan di PostgreSQL dan tidak dibuat ulang pada restart.
 
 Berkas `.templ` harus digenerasikan menjadi berkas Go sebelum perubahan template dikompilasi. Proyek menyimpan hasil generate (`*_templ.go`) agar build biasa dapat dilakukan tanpa memasang binary Templ secara global.
 
@@ -104,16 +119,18 @@ Diagram ini menunjukkan implementasi yang benar-benar tersedia sekarang:
 
 ```text
 Browser
-  │ GET /
+  │ GET /login
   ▼
 cmd/web/main.go
-  │ Membaca PORT (default 8080) dan memulai http.ListenAndServe
+  │ Membaca .env/environment, connect ke PLATFORM_DATABASE_URL,
+  │ menerapkan migration platform, bootstrap admin jika belum ada
   ▼
-internal/web.New() → net/http ServeMux
-  ├─ GET /         → home() dari home.templ
-  │                   → home_templ.go yang dihasilkan Templ
-  │                   → HTML dikirim ke browser
-  └─ GET /static/* → file dari web/static/
+internal/web.New() → CSRF middleware → ServeMux
+  ├─ GET /login    → form username/password + CSRF token
+  ├─ POST /login   → autentikasi, buat cookie session, redirect /
+  ├─ GET /         → wajib punya session
+  ├─ POST /logout  → wajib punya session + CSRF, cabut session
+  └─ GET /static/* → aset dari web/static/
 ```
 
 Untuk halaman baru, buat file `.templ` pada paket yang sesuai, jalankan generator Templ, lalu daftarkan handler melalui router. Perubahan file CSS atau aset statis disimpan di `web/static/`. Hindari SPA dan client-side router; navigasi dan pengiriman form dilakukan melalui request HTTP ke server.
@@ -146,7 +163,7 @@ Package `internal/contracts/` sudah menyediakan tipe `UserID`, `GroupID`, `Datab
 - Grant atau aksi yang nilainya tidak dikenal ditolak (*fail closed*).
 - Pemeriksaan Platform Admin terpisah dari akses ke database target.
 
-**Status kebijakan: draft untuk ditinjau Aufar, Emil, dan Kevin.** Helper sudah mengikuti usulan “grant tertinggi menang”, tetapi aturan ini belum dianggap keputusan final tim. Implementasi repository authorization, session, dan provider koneksi belum tersedia. Nilai awal session yang diusulkan—idle 30 menit, absolute 12 jam, rotasi 15 menit, grace period 30 detik—juga belum diterapkan atau disepakati.
+**Status kebijakan: draft untuk ditinjau Aufar, Emil, dan Kevin.** Helper sudah mengikuti usulan “grant tertinggi menang”, tetapi aturan ini belum dianggap keputusan final tim. Repository authorization dan provider koneksi belum tersedia; session manager sudah ada tetapi belum terhubung ke server. Nilai awal session yang diusulkan—idle 30 menit, absolute 12 jam, rotasi 15 menit, grace period 30 detik—belum disepakati.
 
 ## Test dan pemeriksaan
 
@@ -158,16 +175,25 @@ go vet ./...        # Periksa masalah umum pada kode Go
 go build ./...      # Pastikan seluruh paket dapat dikompilasi
 ```
 
-Jika mengubah file `.templ`, jalankan generator lebih dahulu atau gunakan `make test`. Test handler HTTP dapat memakai `net/http/httptest`; test database nantinya dapat memakai database khusus pengujian. Setiap fitur backend perlu menguji alur berhasil, kegagalan, dan penolakan akses sesuai kebutuhan fitur.
+Jika mengubah file `.templ`, jalankan generator lebih dahulu atau gunakan `make test`. Test handler HTTP dapat memakai `net/http/httptest`; PostgreSQL session integration test memakai `PLATFORM_TEST_DATABASE_URL` dan dilewati jika tidak disetel. Setiap fitur backend perlu menguji alur berhasil, kegagalan, dan penolakan akses sesuai kebutuhan fitur.
 
 ## Pengaturan saat ini
 
 | Nama | Status | Keterangan |
 |---|---|---|
 | `PORT` | Digunakan | Port HTTP; default `8080`. |
-| `DATABASE_URL` | Belum digunakan | Contoh konfigurasi untuk pekerjaan database berikutnya, bukan koneksi aktif. |
+| `DATABASE_URL` | Belum digunakan | Koneksi database target yang nanti dikelola aplikasi; bukan storage session/user platform. |
+| `PLATFORM_DATABASE_URL` | Digunakan | Koneksi PostgreSQL platform untuk akun, session, dan migration internal. |
+| `CSRF_AUTH_KEY` | Digunakan | Secret hex 64 karakter (32 byte) untuk proteksi CSRF; jangan commit. |
+| `INITIAL_ADMIN_USERNAME` | Bootstrap awal | Username admin pertama; hanya diperlukan jika tabel `users` kosong. |
+| `INITIAL_ADMIN_PASSWORD` | Bootstrap awal | Password admin pertama; hanya diperlukan jika tabel `users` kosong dan dihapus dari `.env` setelah bootstrap. |
+| `APP_ENV` | Opsional | `development` secara default; gunakan `production` pada deployment. |
+| `SECURE_COOKIES` | Opsional | `false` secara default untuk HTTP lokal; wajib `true` ketika `APP_ENV=production`. |
+| `PLATFORM_TEST_DATABASE_URL` | Test integrasi opsional | Wajib menunjuk database PostgreSQL khusus pengujian; test membuat dan menghapus schema terisolasi. |
 
-Aplikasi saat ini tidak membaca file `.env`. Atur environment variable di shell atau lingkungan proses ketika fitur yang memerlukannya sudah diimplementasikan.
+Aplikasi membaca `.env` jika file tersedia, membuka koneksi dari `PLATFORM_DATABASE_URL`, lalu menerapkan migration internal secara otomatis saat startup. Jangan memakai koneksi database target pengguna untuk menyimpan akun atau session platform. `DATABASE_URL` tetap disediakan untuk koneksi database target pada fitur berikutnya. Jangan membagikan isi `.env` atau memasukkan kredensial ke Git.
+
+Session memakai cookie opaque `session_id`; token hanya disimpan sebagai hash di PostgreSQL. Nilai idle 30 menit, absolute 12 jam, rotasi 15 menit, dan grace period 30 detik adalah kebijakan yang digunakan. Cookie produksi menggunakan `Secure`; semua request yang mengubah state, termasuk login/logout, dilindungi CSRF.
 
 ## Kendala umum
 
@@ -175,7 +201,10 @@ Aplikasi saat ini tidak membaca file `.env`. Atur environment variable di shell 
 - **Halaman Templ tidak sesuai perubahan terakhir:** jalankan `go run github.com/a-h/templ/cmd/templ@v0.3.960 generate`.
 - **Error `malformed go.sum`:** periksa perubahan `go.sum`, lalu jalankan `go mod tidy`; jangan menambahkan baris checksum secara manual.
 - **CSS tidak ditemukan:** pastikan server dijalankan dari root repository agar path `web/static` ditemukan.
-- **Koneksi database gagal/belum tersedia:** scaffold saat ini belum membuka koneksi PostgreSQL; `DATABASE_URL` belum dibaca oleh program.
+- **Test PostgreSQL session dilewati:** atur `PLATFORM_TEST_DATABASE_URL` ke database pengujian khusus. Jangan arahkan ke database development atau production.
+- **Startup meminta bootstrap admin:** isi `INITIAL_ADMIN_USERNAME` dan `INITIAL_ADMIN_PASSWORD` hanya saat database platform belum memiliki user.
+- **CSRF key tidak valid:** atur `CSRF_AUTH_KEY` sebagai 64 karakter hex (32 byte acak).
+- **Koneksi database gagal/belum tersedia:** pastikan PostgreSQL berjalan dan `PLATFORM_DATABASE_URL` menunjuk ke database platform yang benar.
 
 ## Alur kontribusi yang disarankan
 

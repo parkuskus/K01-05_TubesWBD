@@ -7,8 +7,10 @@ import (
 )
 
 func TestHomePageRenders(t *testing.T) {
+	handler, _, sessions := newTestServer(t)
+	sessions.authenticated = true
 	recorder := httptest.NewRecorder()
-	New().ServeHTTP(recorder, httptest.NewRequest("GET", "/", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest("GET", "/", nil))
 
 	if recorder.Code != 200 {
 		t.Fatalf("status = %d, want 200", recorder.Code)

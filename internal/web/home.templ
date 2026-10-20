@@ -1,6 +1,6 @@
 package web
 
-templ home() {
+templ home(csrfToken string) {
 	<!DOCTYPE html>
 	<html lang="id">
 		<head>
@@ -13,7 +13,11 @@ templ home() {
 			<main>
 				<p class="eyebrow">IF3110 · Milestone 1</p>
 				<h1>Database Management Platform</h1>
-				<p>Fondasi aplikasi siap dikembangkan. Fitur akan ditambahkan setelah pembagian tugas tim.</p>
+				<p>Anda sudah masuk ke platform.</p>
+				<form class="logout-form" action="/logout" method="post">
+					<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+					<button type="submit">Keluar</button>
+				</form>
 			</main>
 		</body>
 	</html>

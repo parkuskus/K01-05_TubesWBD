@@ -1,18 +1,63 @@
 package main
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"if3110.local/db-platform/db/migrations"
+	"if3110.local/db-platform/internal/auth"
+	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/web"
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	if err := run(); err != nil {
+		log.Fatal(err)
 	}
-	log.Printf("listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, web.New()))
+}
+
+func run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("pgx", cfg.PlatformDatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open platform database: %w", err)
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("connect to platform database: %w", err)
+	}
+	if err := migrations.Apply(ctx, db); err != nil {
+		return err
+	}
+	authenticator := auth.NewAuthenticator(db)
+	if err := authenticator.EnsureInitialAdmin(ctx, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
+		return fmt.Errorf("initialize platform admin: %w", err)
+	}
+	sessions, err := auth.NewSessionManager(db, auth.SessionConfig{SecureCookie: cfg.SecureCookies})
+	if err != nil {
+		return fmt.Errorf("configure sessions: %w", err)
+	}
+	handler, err := web.New(web.Config{
+		Authenticator: authenticator,
+		Sessions:      sessions,
+		CSRFKey:       cfg.CSRFKey,
+		SecureCookies: cfg.SecureCookies,
+	})
+	if err != nil {
+		return fmt.Errorf("configure web routes: %w", err)
+	}
+
+	log.Printf("listening on :%s", cfg.Port)
+	return http.ListenAndServe(":"+cfg.Port, handler)
 }

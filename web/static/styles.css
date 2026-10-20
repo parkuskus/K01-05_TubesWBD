@@ -24,3 +24,70 @@ main {
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
+
+.auth-shell {
+	box-sizing: border-box;
+	width: min(100% - 2rem, 28rem);
+	padding: clamp(1.25rem, 5vw, 3rem);
+}
+
+.auth-form {
+	display: grid;
+	gap: 1.25rem;
+	margin-top: 2rem;
+}
+
+.form-field {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.form-field label {
+	font-weight: 600;
+}
+
+.form-field input {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 2.75rem;
+	padding: 0.65rem 0.75rem;
+	border: 1px solid #8c96a5;
+	border-radius: 0.25rem;
+	background: #fff;
+	color: #20242b;
+	font: inherit;
+}
+
+.form-field input:focus-visible,
+button:focus-visible {
+	outline: 3px solid #234a7d;
+	outline-offset: 2px;
+}
+
+.auth-form button,
+.logout-form button {
+	min-height: 2.75rem;
+	padding: 0.65rem 1rem;
+	border: 0;
+	border-radius: 0.25rem;
+	background: #20242b;
+	color: #fff;
+	font: inherit;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.auth-form button:hover,
+.logout-form button:hover {
+	background: #394352;
+}
+
+.error-message {
+	margin-top: 1.25rem;
+	color: #9b1c1c;
+	font-weight: 600;
+}
+
+.logout-form {
+	margin-top: 2rem;
+}
