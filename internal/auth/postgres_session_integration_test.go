@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,9 +17,12 @@ import (
 )
 
 func TestPostgresSessionStoreLifecycle(t *testing.T) {
-	dsn := os.Getenv("PLATFORM_TEST_DATABASE_URL")
+	dsn, err := testDatabaseURL(filepath.Join("..", "..", ".env"), os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if dsn == "" {
-		t.Skip("set PLATFORM_TEST_DATABASE_URL to a dedicated PostgreSQL test database")
+		t.Skip("set PLATFORM_TEST_DATABASE_URL in the process environment or root .env to a dedicated PostgreSQL test database")
 	}
 
 	adminDB, err := sql.Open("pgx", dsn)
