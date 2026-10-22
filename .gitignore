@@ -17,6 +17,8 @@ coverage.*
 !coverage.go
 *.coverprofile
 profile.cov
+*.md
+!/README.md
 extra/
 docs/
 
