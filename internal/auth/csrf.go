@@ -20,7 +20,13 @@ func CSRFProtection(key []byte, secure bool, next http.Handler) (http.Handler, e
 		csrf.SameSite(csrf.SameSiteLaxMode),
 		csrf.Path("/"),
 	)
-	return protect(next), nil
+	protected := protect(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !secure && r.TLS == nil {
+			r = csrf.PlaintextHTTPRequest(r)
+		}
+		protected.ServeHTTP(w, r)
+	}), nil
 }
 
 func CSRFToken(r *http.Request) string {

@@ -188,7 +188,7 @@ func getCSRFToken(t *testing.T, handler http.Handler, path string) ([]*http.Cook
 func postForm(handler http.Handler, path string, form url.Values, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPost, "http://example.com"+path, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Origin", "https://example.com")
+	request.Header.Set("Origin", "http://example.com")
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
