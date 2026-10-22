@@ -20,6 +20,7 @@ const (
 )
 
 // EffectiveAccess returns the strongest group grant, or no access if any grant is invalid.
+// Platform-admin status is independent and must not be included in grants.
 func EffectiveAccess(grants []AccessLevel) AccessLevel {
 	effective := AccessNone
 	for _, grant := range grants {

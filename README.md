@@ -153,17 +153,23 @@ Browser
 
 Setiap request yang dilindungi harus diperiksa di backend. Menyembunyikan tombol di UI saja bukan kontrol akses.
 
-## Kontrak akses lintas modul (draft)
+## Model akses dan kontrak antarmodul
 
-Package `internal/contracts/` sudah menyediakan tipe `UserID`, `GroupID`, `DatabaseID`, `AccessLevel`, dan `DatabaseAction`, serta interface `Authorizer` dan `DatabaseProvider`. Helper kebijakan murninya dapat diuji tanpa database:
+Package `internal/contracts/` menyediakan tipe `UserID`, `GroupID`, `DatabaseID`, `AccessLevel`, dan `DatabaseAction`, serta interface `Authorizer` dan `DatabaseProvider`. Kontrak ini memisahkan authorization dari koneksi database:
 
-- Akses efektif menggabungkan grant group dengan memilih tingkat tertinggi (`View + Edit` mengungguli `View Only`).
+- Grant group untuk user dan database yang sama digabung dengan memilih tingkat tertinggi (`View + Edit` mengungguli `View Only`). Aturan ini telah disepakati tim.
 - `View Only` mengizinkan melihat schema, data, dan riwayat migration.
 - `View + Edit` juga mengizinkan membuat, mengubah, dan menjalankan migration.
 - Grant atau aksi yang nilainya tidak dikenal ditolak (*fail closed*).
-- Pemeriksaan Platform Admin terpisah dari akses ke database target.
+- Status Platform Admin terpisah dari akses database; admin tetap memerlukan grant group untuk melihat atau mengubah database target.
 
-**Status kebijakan: draft untuk ditinjau Aufar, Emil, dan Kevin.** Helper sudah mengikuti usulan “grant tertinggi menang”, tetapi aturan ini belum dianggap keputusan final tim. Repository authorization dan provider koneksi belum tersedia; session manager sudah ada tetapi belum terhubung ke server. Nilai awal session yang diusulkan—idle 30 menit, absolute 12 jam, rotasi 15 menit, grace period 30 detik—belum disepakati.
+`Authorizer` memeriksa hak admin platform dan izin database secara terpisah. Modul pemakai meminta pool target melalui `DatabaseProvider.Pool(ctx, databaseID)`. Provider bertanggung jawab mencari metadata koneksi berdasarkan ID dan mengelola pool; DSN serta password tidak dikembalikan kepada modul pemakai. Metadata koneksi dikelola di storage platform. Implementasi repository authorization dan provider koneksi belum tersedia.
+
+Riwayat migration disimpan **di setiap database target**, bukan di database platform, dalam schema khusus `if3110_platform` dengan tabel `migration_history` (`if3110_platform.migration_history`). Schema tersebut dicadangkan untuk metadata aplikasi; implementasi dan tabel dimiliki modul migration.
+
+**Kontrak UI/route yang disepakati:** setiap modul memiliki handler dan template Templ sendiri; layout bersama berada di `internal/ui`; dan `internal/web` menjadi satu-satunya pemilik komposisi middleware dan router untuk memasang handler modul pada `/platform/`, `/databases/`, dan `/migrations/`. Modul tidak mengimpor `internal/web`; satu integrator mengubah `internal/web/server.go` agar tidak terjadi konflik. Batas ini mendokumentasikan rancangan, bukan klaim bahwa route atau UI modul telah tersedia.
+
+**Status keputusan:** aturan agregasi grant dan pemisahan hak Platform Admin telah disetujui tim. Batas provider koneksi, lokasi riwayat migration, dan batas UI/route adalah keputusan yang disetujui Aufar dan menunggu tinjauan Emil serta Kevin. `internal/ui`, repository authorization, provider koneksi, dan modul fitur tersebut belum diimplementasikan. Kebijakan session yang digunakan adalah idle 30 menit, absolute 12 jam, rotasi 15 menit, dan grace period 30 detik.
 
 ## Test dan pemeriksaan
 
