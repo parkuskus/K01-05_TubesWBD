@@ -194,6 +194,16 @@ func TestRequireSessionRotatesAndHonorsGraceAndAbsoluteExpiration(t *testing.T) 
 	if graceResponse.Result().Cookies()[0].Value == oldCookie.Value {
 		t.Fatal("grace-period request did not receive a refreshed cookie")
 	}
+	manager.now = func() time.Time { return store.sessions[1].record.RotatedAt.Add(DefaultGracePeriod + time.Second) }
+	staleRequest := httptest.NewRequest(http.MethodGet, "/private", nil)
+	staleRequest.AddCookie(oldCookie)
+	staleResponse := httptest.NewRecorder()
+	manager.RequireSession(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("stale session identifier reached handler")
+	})).ServeHTTP(staleResponse, staleRequest)
+	if staleResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("old identifier after grace period returned %d, want 401", staleResponse.Code)
+	}
 
 	manager.now = func() time.Time { return originalExpiry }
 	expiredRequest := httptest.NewRequest(http.MethodGet, "/private", nil)
@@ -243,6 +253,43 @@ func TestSessionConfigRejectsInvalidLifetimes(t *testing.T) {
 	}
 	if _, err := normalizeSessionConfig(SessionConfig{IdleTimeout: time.Hour, AbsoluteLifetime: time.Minute}); err == nil {
 		t.Fatal("absolute lifetime shorter than idle timeout was accepted")
+	}
+}
+
+func TestRevokeUserInvalidatesAllSessions(t *testing.T) {
+	manager := newTestSessionManager(t, newFakeSessionStore())
+	manager.now = func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }
+	makeSession := func(userID contracts.UserID) *http.Cookie {
+		response := httptest.NewRecorder()
+		if err := manager.Create(response, httptest.NewRequest(http.MethodPost, "/login", nil), userID); err != nil {
+			t.Fatal(err)
+		}
+		return response.Result().Cookies()[0]
+	}
+	first := makeSession("user-1")
+	second := makeSession("user-1")
+	other := makeSession("user-2")
+	if err := manager.RevokeUser(context.Background(), "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		cookie *http.Cookie
+		want   int
+	}{
+		{"first revoked session", first, http.StatusUnauthorized},
+		{"second revoked session", second, http.StatusUnauthorized},
+		{"unrelated session", other, http.StatusNoContent},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/private", nil)
+		request.AddCookie(tc.cookie)
+		response := httptest.NewRecorder()
+		manager.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})).ServeHTTP(response, request)
+		if response.Code != tc.want {
+			t.Errorf("%s returned %d, want %d", tc.name, response.Code, tc.want)
+		}
 	}
 }
 
