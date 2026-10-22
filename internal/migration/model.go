@@ -27,6 +27,8 @@ const (
 
 var (
 	ErrNilDatabase             = errors.New("database connection is required")
+	ErrInvalidServiceConfig    = errors.New("migration service requires authorizer and database provider")
+	ErrInvalidDatabaseID       = errors.New("database ID is required")
 	ErrMigrationNotFound       = errors.New("migration not found")
 	ErrInvalidSQL              = errors.New("migration SQL must not be empty")
 	ErrInvalidUser             = errors.New("user ID is required")

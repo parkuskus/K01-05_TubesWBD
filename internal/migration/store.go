@@ -228,6 +228,180 @@ func (s *PostgresStore) GetByID(ctx context.Context, id int64) (MigrationRecord,
 	return record, nil
 }
 
+// jalankan draft migration berdasarkan nomor versi di dalam transaksi
+func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, executedBy contracts.UserID, now time.Time) (MigrationRecord, error) {
+	if version <= 0 {
+		return MigrationRecord{}, ErrInvalidVersion
+	}
+	if strings.TrimSpace(string(executedBy)) == "" {
+		return MigrationRecord{}, ErrInvalidUser
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at
+		FROM if3110_platform.migration_history
+		WHERE version = $1
+		FOR UPDATE`, version)
+
+	record, err := s.scanRecord(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MigrationRecord{}, ErrMigrationNotFound
+	}
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+	if record.Status != StatusDraft {
+		return MigrationRecord{}, ErrMigrationAlreadyApplied
+	}
+
+	if _, execErr := tx.ExecContext(ctx, record.SQLText); execErr != nil {
+		// rollback perubahan sql yang gagal, lalu catat status failed di transaksi baru
+		_ = tx.Rollback()
+		failedRecord, markErr := s.markDraftFailed(ctx, version, executedBy, execErr.Error(), now)
+		if markErr != nil {
+			return MigrationRecord{}, errors.Join(execErr, markErr)
+		}
+		return failedRecord, execErr
+	}
+
+	updatedRow := tx.QueryRowContext(ctx, `
+		UPDATE if3110_platform.migration_history
+		SET status = $2, executed_by = $3, error_message = '', updated_at = $4, executed_at = $4
+		WHERE version = $1
+		RETURNING id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at`,
+		version, string(StatusApplied), string(executedBy), now,
+	)
+
+	appliedRecord, err := s.scanRecord(updatedRow)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return MigrationRecord{}, err
+	}
+	return appliedRecord, nil
+}
+
+// buat dan langsung jalankan sql migration baru dalam satu alur transaksi
+func (s *PostgresStore) RunNew(ctx context.Context, title, sqlText string, executedBy contracts.UserID, now time.Time) (MigrationRecord, error) {
+	cleanedSQL, err := normalizeSQL(sqlText)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+	if strings.TrimSpace(string(executedBy)) == "" {
+		return MigrationRecord{}, ErrInvalidUser
+	}
+	cleanedTitle := normalizeTitle(title)
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE if3110_platform.migration_history IN EXCLUSIVE MODE`); err != nil {
+		return MigrationRecord{}, err
+	}
+
+	var nextVersion int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version), 0) + 1
+		FROM if3110_platform.migration_history`).Scan(&nextVersion); err != nil {
+		return MigrationRecord{}, err
+	}
+
+	if _, execErr := tx.ExecContext(ctx, cleanedSQL); execErr != nil {
+		// rollback semua perubahan dari sql yang gagal, lalu simpan riwayat gagalnya
+		_ = tx.Rollback()
+		failedRecord, recordErr := s.insertFailedRun(ctx, cleanedTitle, cleanedSQL, executedBy, execErr.Error(), now)
+		if recordErr != nil {
+			return MigrationRecord{}, errors.Join(execErr, recordErr)
+		}
+		return failedRecord, execErr
+	}
+
+	row := tx.QueryRowContext(ctx, `
+		INSERT INTO if3110_platform.migration_history (
+			version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $5, '', $6, $6, $6)
+		RETURNING id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at`,
+		nextVersion, cleanedTitle, cleanedSQL, string(StatusApplied), string(executedBy), now,
+	)
+
+	record, err := s.scanRecord(row)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return MigrationRecord{}, err
+	}
+	return record, nil
+}
+
+func (s *PostgresStore) markDraftFailed(ctx context.Context, version int64, executedBy contracts.UserID, errMsg string, now time.Time) (MigrationRecord, error) {
+	row := s.db.QueryRowContext(ctx, `
+		UPDATE if3110_platform.migration_history
+		SET status = $2, executed_by = $3, error_message = $4, updated_at = $5, executed_at = $5
+		WHERE version = $1
+		RETURNING id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at`,
+		version, string(StatusFailed), string(executedBy), errMsg, now,
+	)
+	return s.scanRecord(row)
+}
+
+func (s *PostgresStore) insertFailedRun(ctx context.Context, title, sqlText string, executedBy contracts.UserID, errMsg string, now time.Time) (MigrationRecord, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE if3110_platform.migration_history IN EXCLUSIVE MODE`); err != nil {
+		return MigrationRecord{}, err
+	}
+
+	var nextVersion int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version), 0) + 1
+		FROM if3110_platform.migration_history`).Scan(&nextVersion); err != nil {
+		return MigrationRecord{}, err
+	}
+
+	row := tx.QueryRowContext(ctx, `
+		INSERT INTO if3110_platform.migration_history (
+			version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $7, $7)
+		RETURNING id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at`,
+		nextVersion, title, sqlText, string(StatusFailed), string(executedBy), errMsg, now,
+	)
+
+	record, err := s.scanRecord(row)
+	if err != nil {
+		return MigrationRecord{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return MigrationRecord{}, err
+	}
+	return record, nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
