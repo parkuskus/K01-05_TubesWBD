@@ -1,0 +1,188 @@
+.db-module {
+    width: 100%;
+    min-width: 0;
+    line-height: 1.5;
+}
+
+.db-module h1 {
+    margin: 1.5rem 0 .5rem;
+}
+
+.db-module h2 {
+    margin-top: 2rem;
+    font-size: 1.1rem;
+}
+
+.db-module a {
+    color: #234a7d;
+    text-underline-offset: .2em;
+}
+
+.db-nav, .db-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+}
+
+.db-nav {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #d8dde4;
+}
+
+.db-actions {
+    margin: 1rem 0;
+}
+
+.db-module td .db-actions {
+    margin: 0;
+}
+
+.db-module .db-button, .db-module button {
+    display: inline-block;
+    padding: .65rem 1rem;
+    border-radius: .3rem;
+    background: #20242b;
+    color: white;
+    text-decoration: none;
+}
+
+.db-module button {
+    border: 0;
+    font: inherit;
+    cursor: pointer;
+}
+
+.db-module .db-danger {
+    background: #9b1c1c;
+}
+
+.db-form {
+    display: grid;
+    gap: .5rem;
+    max-width: 36rem;
+    margin-top: 1.5rem;
+}
+
+.db-form label {
+    margin-top: .6rem;
+    font-weight: 600;
+}
+
+.db-form input, .db-form select {
+    box-sizing: border-box;
+    width: 100%;
+    padding: .65rem;
+    border: 1px solid #8c96a5;
+    border-radius: .25rem;
+    background: white;
+    color: #20242b;
+    font: inherit;
+}
+
+.db-form small, .db-list small {
+    color: #5c6675;
+}
+
+.db-module :focus-visible {
+    outline: 3px solid #234a7d;
+    outline-offset: 3px;
+}
+
+.db-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border: 1px solid #d8dde4;
+    border-radius: .3rem;
+    background: white;
+}
+
+.db-module table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.db-module caption {
+    padding: .75rem;
+    text-align: left;
+    font-weight: 600;
+    background: #f0f2f5;
+}
+
+.db-module th, .db-module td {
+    padding: .7rem;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+}
+
+.db-module thead {
+    background: #f8f9fb;
+}
+
+.db-module td {
+    max-width: 30rem;
+    overflow-wrap: anywhere;
+}
+
+.db-value {
+    white-space: pre-wrap;
+}
+
+.db-null {
+    color: #5c6675;
+}
+
+.db-empty {
+    padding: 1rem 0;
+    color: #5c6675;
+}
+
+.db-alert, .db-notice {
+    padding: .8rem 1rem;
+    border-radius: .3rem;
+}
+
+.db-alert {
+    background: #fff0f0;
+    color: #8e1b1b;
+}
+
+.db-notice {
+    background: #eaf5ed;
+    color: #235530;
+}
+
+.db-list {
+    list-style: none;
+    padding: 0;
+}
+
+.db-list li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .8rem 0;
+    border-bottom: 1px solid #d8dde4;
+}
+
+.db-definitions dt {
+    font-weight: 600;
+    margin-top: 1rem;
+}
+
+.db-definitions dd {
+    margin: .4rem 0;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .db-nav, .db-actions {
+        gap: .75rem;
+    }
+    .db-module th, .db-module td {
+        padding: .5rem;
+    }
+}
