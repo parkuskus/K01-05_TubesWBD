@@ -24,13 +24,13 @@ internal/auth/       Bootstrap admin, autentikasi, session PostgreSQL, dan CSRF
 internal/config/     Pembacaan `.env` dan validasi konfigurasi
 internal/database/   Koneksi PostgreSQL dan database viewer (placeholder)
 internal/migration/  Editor, eksekusi, dan riwayat migration (placeholder)
-internal/platform/   User, group, dan administrasi platform (placeholder)
-db/migrations/       Schema user dan session database platform
+internal/platform/   Backend administrasi user, group, dan keanggotaan
+db/migrations/       Schema user, session, group, dan keanggotaan database platform
 web/static/          CSS dan aset statis
 extra/               Dokumen pendukung lokal; seluruh folder diabaikan Git
 ```
 
-Folder placeholder belum berisi implementasi. Pembagian tanggung jawab yang diusulkan untuk Aufar, Emil, dan Kevin ada di `extra/Pembagian-Kerja-Milestone-1.md` pada komputer lokal.
+Folder `internal/database` dan `internal/migration` masih placeholder. Pembagian tanggung jawab yang diusulkan untuk Aufar, Emil, dan Kevin ada di `extra/Pembagian-Kerja-Milestone-1.md` pada komputer lokal.
 
 ## Prasyarat
 
@@ -171,7 +171,7 @@ Riwayat migration disimpan **di setiap database target**, bukan di database plat
 
 **Status keputusan:** aturan agregasi grant dan pemisahan hak Platform Admin telah disetujui tim. Batas provider koneksi, lokasi riwayat migration, dan batas UI/route adalah keputusan yang disetujui Aufar dan menunggu tinjauan Emil serta Kevin. `internal/ui`, repository authorization, provider koneksi, dan modul fitur tersebut belum diimplementasikan. Kebijakan session yang digunakan adalah idle 30 menit, absolute 12 jam, rotasi 15 menit, dan grace period 30 detik.
 
-**Usulan handoff administrasi platform (perlu tinjauan Kevin/Emil):** `internal/platform` menyediakan model `User` (ID, username, status admin), `Group` (ID, nama), dan `Grant` (ID group, ID database, level); tidak ada hash password atau kredensial koneksi di model publik. `platform.NewService(db)` kini menyediakan `ListUsers`, `CreateUser`, `UpdateUsername`, `SetPassword`, `SetPlatformAdmin`, dan `DeleteUser`; tiap metode menerima `ctx` dan ID aktor terautentikasi, sedangkan perubahan user memeriksa status Platform Admin di transaksi backend. Error domain: `ErrInvalidInput`, `ErrNotFound`, `ErrConflict`, dan `contracts.ErrForbidden`. Group, keanggotaan, grant, dan authorization belum tersedia sebagai service. ID database pada grant nantinya merujuk ID koneksi terdaftar milik Emil. Schema platform diurutkan: `0003_create_groups.sql` (Aufar), migration koneksi (Emil), lalu migration grant (Aufar). Login kini memeriksa ulang hash password dan status admin melalui `LoginProof` sambil mengunci user dalam transaksi pembuatan session; bukti lama ditolak tanpa menerbitkan cookie. Tes PostgreSQL untuk schema, transaksi, dan race login belum dijalankan bila `PLATFORM_TEST_DATABASE_URL` tidak tersedia di environment proses.
+**Usulan handoff administrasi platform (perlu tinjauan Kevin/Emil):** `internal/platform` menyediakan model `User` (ID, username, status admin), `Group` (ID, nama), dan `Grant` (ID group, ID database, level); tidak ada hash password atau kredensial koneksi di model publik. `platform.NewService(db)` menyediakan operasi daftar/buat/ubah/hapus user dan group, `ListMembers`, serta `SetMembership` untuk menambah atau menghapus keanggotaan secara idempoten. Tiap metode menerima `ctx` dan ID aktor terautentikasi; repository memeriksa status Platform Admin di backend. Error domain: `ErrInvalidInput`, `ErrNotFound`, `ErrConflict`, dan `contracts.ErrForbidden`. Grant dan authorization belum tersedia sebagai service. ID database pada grant nantinya merujuk ID koneksi terdaftar milik Emil. Schema platform diurutkan: `0003_create_groups.sql` (Aufar), migration koneksi (Emil), lalu migration grant (Aufar). Login memeriksa ulang hash password dan status admin melalui `LoginProof` sambil mengunci user dalam transaksi pembuatan session; bukti lama ditolak tanpa menerbitkan cookie. Tes PostgreSQL memerlukan `PLATFORM_TEST_DATABASE_URL` dalam environment proses agar tidak dilewati.
 
 ## Test dan pemeriksaan
 

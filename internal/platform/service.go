@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"strings"
 
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/contracts"
@@ -25,9 +26,24 @@ type userRepository interface {
 	deleteUser(context.Context, int64, int64) error
 }
 
-type Service struct{ users userRepository }
+type groupRepository interface {
+	listGroups(context.Context, int64) ([]Group, error)
+	createGroup(context.Context, int64, string) (contracts.GroupID, error)
+	renameGroup(context.Context, int64, int64, string) error
+	deleteGroup(context.Context, int64, int64) error
+	listMembers(context.Context, int64, int64) ([]User, error)
+	setMembership(context.Context, int64, int64, int64, bool) error
+}
 
-func NewService(db *sql.DB) *Service { return &Service{users: &postgresRepository{db: db}} }
+type Service struct {
+	users  userRepository
+	groups groupRepository
+}
+
+func NewService(db *sql.DB) *Service {
+	repository := &postgresRepository{db: db}
+	return &Service{users: repository, groups: repository}
+}
 
 func positiveID(id contracts.UserID) (int64, error) {
 	n, err := strconv.ParseInt(string(id), 10, 64)
@@ -121,4 +137,88 @@ func (s *Service) DeleteUser(ctx context.Context, actorID, userID contracts.User
 		return err
 	}
 	return s.users.deleteUser(ctx, actor, user)
+}
+
+func groupName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 64 {
+		return "", ErrInvalidInput
+	}
+	return name, nil
+}
+
+func (s *Service) ListGroups(ctx context.Context, actorID contracts.UserID) ([]Group, error) {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return nil, err
+	}
+	return s.groups.listGroups(ctx, actor)
+}
+
+func (s *Service) CreateGroup(ctx context.Context, actorID contracts.UserID, name string) (contracts.GroupID, error) {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return "", err
+	}
+	name, err = groupName(name)
+	if err != nil {
+		return "", err
+	}
+	return s.groups.createGroup(ctx, actor, name)
+}
+
+func (s *Service) RenameGroup(ctx context.Context, actorID contracts.UserID, groupID contracts.GroupID, name string) error {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return err
+	}
+	name, err = groupName(name)
+	if err != nil {
+		return err
+	}
+	return s.groups.renameGroup(ctx, actor, group, name)
+}
+
+func (s *Service) DeleteGroup(ctx context.Context, actorID contracts.UserID, groupID contracts.GroupID) error {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return err
+	}
+	return s.groups.deleteGroup(ctx, actor, group)
+}
+
+func (s *Service) ListMembers(ctx context.Context, actorID contracts.UserID, groupID contracts.GroupID) ([]User, error) {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return nil, err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return nil, err
+	}
+	return s.groups.listMembers(ctx, actor, group)
+}
+
+func (s *Service) SetMembership(ctx context.Context, actorID, userID contracts.UserID, groupID contracts.GroupID, member bool) error {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return err
+	}
+	user, err := positiveID(userID)
+	if err != nil {
+		return err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return err
+	}
+	return s.groups.setMembership(ctx, actor, user, group, member)
 }

@@ -176,3 +176,123 @@ func (p *postgresRepository) deleteUser(ctx context.Context, actor, user int64) 
 		return updateUser(ctx, tx, `DELETE FROM users WHERE id = $1`, user)
 	})
 }
+
+func (p *postgresRepository) listGroups(ctx context.Context, actor int64) ([]Group, error) {
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := requireAdmin(ctx, tx, actor); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, name FROM groups ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	var groups []Group
+	for rows.Next() {
+		var group Group
+		var id int64
+		if err := rows.Scan(&id, &group.Name); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		group.ID = contracts.GroupID(strconv.FormatInt(id, 10))
+		groups = append(groups, group)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+
+func (p *postgresRepository) createGroup(ctx context.Context, actor int64, name string) (contracts.GroupID, error) {
+	var id int64
+	err := p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `INSERT INTO groups (name) VALUES ($1) RETURNING id`, name).Scan(&id)
+	})
+	if err != nil {
+		return "", err
+	}
+	return contracts.GroupID(strconv.FormatInt(id, 10)), nil
+}
+
+func (p *postgresRepository) renameGroup(ctx context.Context, actor, group int64, name string) error {
+	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		return updateUser(ctx, tx, `UPDATE groups SET name = $2 WHERE id = $1`, group, name)
+	})
+}
+
+func (p *postgresRepository) deleteGroup(ctx context.Context, actor, group int64) error {
+	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		return updateUser(ctx, tx, `DELETE FROM groups WHERE id = $1`, group)
+	})
+}
+
+func (p *postgresRepository) listMembers(ctx context.Context, actor, group int64) ([]User, error) {
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := requireAdmin(ctx, tx, actor); err != nil {
+		return nil, err
+	}
+	var exists int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM groups WHERE id = $1`, group).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT u.id, u.username, u.is_platform_admin
+		FROM group_memberships AS m JOIN users AS u ON u.id = m.user_id
+		WHERE m.group_id = $1 ORDER BY u.id`, group)
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	for rows.Next() {
+		var user User
+		var id int64
+		if err := rows.Scan(&id, &user.Username, &user.IsPlatformAdmin); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		user.ID = contracts.UserID(strconv.FormatInt(id, 10))
+		users = append(users, user)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func (p *postgresRepository) setMembership(ctx context.Context, actor, user, group int64, member bool) error {
+	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		var groupExists, userExists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM groups WHERE id = $1), EXISTS(SELECT 1 FROM users WHERE id = $2)`, group, user).Scan(&groupExists, &userExists); err != nil {
+			return err
+		}
+		if !groupExists || !userExists {
+			return ErrNotFound
+		}
+		if member {
+			_, err := tx.ExecContext(ctx, `INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2) ON CONFLICT (group_id, user_id) DO NOTHING`, group, user)
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2`, group, user)
+		return err
+	})
+}
