@@ -1,0 +1,303 @@
+package database
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"mime"
+	"net/http"
+	"net/url"
+	"strconv"
+
+	"github.com/a-h/templ"
+	"if3110.local/db-platform/internal/auth"
+	"if3110.local/db-platform/internal/contracts"
+)
+
+type viewerReader interface {
+	Schemas(context.Context, contracts.UserID, contracts.DatabaseID) ([]string, error)
+	Tables(context.Context, contracts.UserID, contracts.DatabaseID, string) ([]Table, error)
+	Details(context.Context, contracts.UserID, contracts.DatabaseID, string, string) (TableDetails, error)
+	Data(context.Context, contracts.UserID, contracts.DatabaseID, string, string, int) (DataPage, error)
+}
+
+type handlers struct {
+	manager     *Manager
+	viewer      viewerReader
+	layout      func(string, templ.Component) templ.Component
+	currentUser func(*http.Request) (contracts.UserID, bool)
+}
+
+// NewHandler returns routes under /databases/. Mount without StripPrefix, inside
+// the central session and CSRF middleware. layout is supplied by internal/ui's
+// owner; this module only renders page content and never imports internal/web.
+func NewHandler(manager *Manager, layout func(string, templ.Component) templ.Component) (http.Handler, error) {
+	if manager == nil || layout == nil {
+		return nil, ErrInvalidConfig
+	}
+	viewer, err := NewViewer(manager.authorizer, manager)
+	if err != nil {
+		return nil, err
+	}
+	h := &handlers{manager: manager, viewer: viewer, layout: layout, currentUser: auth.CurrentUser}
+	return h.routes(), nil
+}
+
+func (h *handlers) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /databases/{$}", h.withUser(h.databaseList))
+	mux.HandleFunc("GET /databases/connections/{$}", h.withUser(h.connectionList))
+	mux.HandleFunc("GET /databases/connections/new", h.withUser(h.newConnection))
+	mux.HandleFunc("POST /databases/connections/{$}", h.withUser(h.createConnection))
+	mux.HandleFunc("GET /databases/connections/{id}/edit", h.withUser(h.editConnection))
+	mux.HandleFunc("POST /databases/connections/{id}/edit", h.withUser(h.updateConnection))
+	mux.HandleFunc("GET /databases/connections/{id}/delete", h.withUser(h.deletePage))
+	mux.HandleFunc("POST /databases/connections/{id}/delete", h.withUser(h.deleteConnection))
+	mux.HandleFunc("GET /databases/{id}/schemas", h.withUser(h.schemas))
+	mux.HandleFunc("GET /databases/{id}/tables", h.withUser(h.tables))
+	mux.HandleFunc("GET /databases/{id}/table", h.withUser(h.details))
+	mux.HandleFunc("GET /databases/{id}/data", h.withUser(h.data))
+	return mux
+}
+
+func (h *handlers) withUser(next func(http.ResponseWriter, *http.Request, contracts.UserID)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		actor, ok := h.currentUser(r)
+		if !ok || actor == "" {
+			http.Error(w, "Silakan login terlebih dahulu.", http.StatusUnauthorized)
+			return
+		}
+		// Fail closed if the integrator forgets the central CSRF middleware.
+		if r.Method == http.MethodPost && auth.CSRFToken(r) == "" {
+			http.Error(w, "Form tidak valid. Muat ulang halaman.", http.StatusForbidden)
+			return
+		}
+		next(w, r, actor)
+	}
+}
+
+func (h *handlers) render(w http.ResponseWriter, r *http.Request, status int, title string, content templ.Component) {
+	var body bytes.Buffer
+	if err := h.layout(title, content).Render(r.Context(), &body); err != nil {
+		http.Error(w, "Halaman sementara tidak tersedia.", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(body.Bytes())
+}
+
+func errorResponse(err error) (int, string) {
+	switch {
+	case errors.Is(err, contracts.ErrForbidden):
+		return http.StatusForbidden, "Anda tidak memiliki akses untuk tindakan ini."
+	case errors.Is(err, ErrInvalidInput):
+		return http.StatusBadRequest, "Input tidak valid. Periksa kembali isian Anda."
+	case errors.Is(err, ErrNotFound):
+		return http.StatusNotFound, "Database atau objek tidak ditemukan."
+	case errors.Is(err, ErrConflict):
+		return http.StatusConflict, "Nama koneksi sudah digunakan."
+	case errors.Is(err, ErrInUse):
+		return http.StatusConflict, "Koneksi masih digunakan dan belum dapat dihapus."
+	default:
+		return http.StatusServiceUnavailable, "Database sementara tidak tersedia. Coba lagi nanti."
+	}
+}
+func (h *handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
+	status, message := errorResponse(err)
+	h.render(w, r, status, "Permintaan gagal", messagePage(message))
+}
+
+func (h *handlers) connectionList(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	items, err := h.manager.List(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	message := ""
+	switch r.URL.Query().Get("result") {
+	case "created":
+		message = "Koneksi berhasil ditambahkan."
+	case "updated":
+		message = "Koneksi berhasil diperbarui."
+	case "deleted":
+		message = "Koneksi berhasil dihapus."
+	}
+	h.render(w, r, 200, "Kelola koneksi", connectionsPage(items, message))
+}
+
+func (h *handlers) newConnection(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	if err := h.manager.requireAdmin(r.Context(), actor); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Tambah koneksi", connectionForm("", Connection{Port: 5432, SSLMode: "disable"}, auth.CSRFToken(r), ""))
+}
+func (h *handlers) editConnection(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	c, err := h.manager.Get(r.Context(), actor, contracts.DatabaseID(r.PathValue("id")))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Edit koneksi", connectionForm(c.ID, c, auth.CSRFToken(r), ""))
+}
+
+func parseConnectionForm(w http.ResponseWriter, r *http.Request, edit bool) (ConnectionInput, error) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" || r.URL.RawQuery != "" || r.ContentLength > 16384 {
+		return ConnectionInput{}, ErrInvalidInput
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16384)
+	if err := r.ParseForm(); err != nil {
+		return ConnectionInput{}, ErrInvalidInput
+	}
+	// CSRF middleware may already have parsed PostForm, so also check its size.
+	if len(r.PostForm.Encode()) > 16384 {
+		return ConnectionInput{}, ErrInvalidInput
+	}
+	port, _ := strconv.Atoi(r.PostForm.Get("port"))
+	in := ConnectionInput{Name: r.PostForm.Get("name"), Host: r.PostForm.Get("host"), Port: port, Database: r.PostForm.Get("database"), Username: r.PostForm.Get("username"), SSLMode: r.PostForm.Get("sslmode")}
+	password := r.PostForm.Get("password")
+	if !edit || password != "" {
+		in.Password = &password
+	}
+	return in, nil
+}
+
+func (h *handlers) createConnection(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	h.save(w, r, actor, false)
+}
+func (h *handlers) updateConnection(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	h.save(w, r, actor, true)
+}
+func (h *handlers) save(w http.ResponseWriter, r *http.Request, actor contracts.UserID, edit bool) {
+	if err := h.manager.requireAdmin(r.Context(), actor); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	in, err := parseConnectionForm(w, r, edit)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	id := contracts.DatabaseID(r.PathValue("id"))
+	if edit {
+		_, err = h.manager.Update(r.Context(), actor, id, in)
+	} else {
+		_, err = h.manager.Create(r.Context(), actor, in)
+	}
+	if err != nil {
+		if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrConflict) {
+			status, message := errorResponse(err)
+			c := Connection{Name: in.Name, Host: in.Host, Port: in.Port, Database: in.Database, Username: in.Username, SSLMode: in.SSLMode}
+			h.render(w, r, status, "Simpan koneksi", connectionForm(id, c, auth.CSRFToken(r), message))
+			return
+		}
+		h.fail(w, r, err)
+		return
+	}
+	result := "created"
+	if edit {
+		result = "updated"
+	}
+	http.Redirect(w, r, "/databases/connections/?result="+result, http.StatusSeeOther)
+}
+
+func (h *handlers) deletePage(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	c, err := h.manager.Get(r.Context(), actor, contracts.DatabaseID(r.PathValue("id")))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Hapus koneksi", deleteConfirmation(c, auth.CSRFToken(r)))
+}
+func (h *handlers) deleteConnection(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	if r.URL.RawQuery != "" {
+		h.fail(w, r, ErrInvalidInput)
+		return
+	}
+	if err := h.manager.Delete(r.Context(), actor, contracts.DatabaseID(r.PathValue("id"))); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/databases/connections/?result=deleted", http.StatusSeeOther)
+}
+
+func (h *handlers) databaseList(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	items, err := h.manager.Accessible(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Database", databasesPage(items))
+}
+func (h *handlers) schemas(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	id := contracts.DatabaseID(r.PathValue("id"))
+	items, err := h.viewer.Schemas(r.Context(), actor, id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Schema", schemasPage(id, items))
+}
+func (h *handlers) tables(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	id := contracts.DatabaseID(r.PathValue("id"))
+	schema := r.URL.Query().Get("schema")
+	items, err := h.viewer.Tables(r.Context(), actor, id, schema)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Tabel", tablesPage(id, schema, items))
+}
+func (h *handlers) details(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	id := contracts.DatabaseID(r.PathValue("id"))
+	q := r.URL.Query()
+	detail, err := h.viewer.Details(r.Context(), actor, id, q.Get("schema"), q.Get("table"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Struktur tabel", tablePage(id, detail))
+}
+func (h *handlers) data(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	id := contracts.DatabaseID(r.PathValue("id"))
+	q := r.URL.Query()
+	page := 1
+	if raw := q.Get("page"); raw != "" {
+		var err error
+		page, err = strconv.Atoi(raw)
+		if err != nil {
+			h.fail(w, r, ErrInvalidInput)
+			return
+		}
+	}
+	result, err := h.viewer.Data(r.Context(), actor, id, q.Get("schema"), q.Get("table"), page)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Data tabel", dataPage(id, q.Get("schema"), q.Get("table"), result))
+}
+
+func viewerURL(id contracts.DatabaseID, view, schema, table string, page int) string {
+	q := url.Values{}
+	if schema != "" {
+		q.Set("schema", schema)
+	}
+	if table != "" {
+		q.Set("table", table)
+	}
+	if page > 0 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	path := "/databases/" + url.PathEscape(string(id)) + "/" + view
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	return path
+}
+func connectionURL(id contracts.DatabaseID, action string) string {
+	return "/databases/connections/" + url.PathEscape(string(id)) + "/" + action
+}
