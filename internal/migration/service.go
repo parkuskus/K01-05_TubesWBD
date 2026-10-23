@@ -85,6 +85,9 @@ func (s *Service) CreateDraft(ctx context.Context, userID contracts.UserID, dbID
 	if err != nil {
 		return MigrationRecord{}, err
 	}
+	if err := store.EnsureSchema(ctx); err != nil {
+		return MigrationRecord{}, err
+	}
 	return store.CreateDraft(ctx, title, sqlText, userID, s.currentTime())
 }
 
@@ -145,10 +148,13 @@ func (s *Service) RunMigration(ctx context.Context, userID contracts.UserID, dbI
 	if err != nil {
 		return MigrationRecord{}, err
 	}
+	if err := store.EnsureSchema(ctx); err != nil {
+		return MigrationRecord{}, err
+	}
 	return store.RunNew(ctx, title, sqlText, userID, s.currentTime())
 }
 
-// ambil pool koneksi dari provider dan pastikan tabel riwayat udah siap
+// ambil pool koneksi dari provider tanpa mengubah database target
 func (s *Service) openStore(ctx context.Context, dbID contracts.DatabaseID) (*PostgresStore, error) {
 	db, err := s.dbProvider.Pool(ctx, dbID)
 	if err != nil {
@@ -156,9 +162,6 @@ func (s *Service) openStore(ctx context.Context, dbID contracts.DatabaseID) (*Po
 	}
 	store, err := NewPostgresStore(db, dbID)
 	if err != nil {
-		return nil, err
-	}
-	if err := store.EnsureSchema(ctx); err != nil {
 		return nil, err
 	}
 	return store, nil
@@ -180,4 +183,3 @@ func validateIdentity(userID contracts.UserID, dbID contracts.DatabaseID) error 
 	}
 	return nil
 }
-

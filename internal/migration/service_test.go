@@ -3,11 +3,141 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"if3110.local/db-platform/internal/contracts"
 )
+
+type readonlyConnector struct{ conn *readonlyConn }
+
+func (c readonlyConnector) Connect(context.Context) (driver.Conn, error) { return c.conn, nil }
+func (readonlyConnector) Driver() driver.Driver                          { return readonlyDriver{} }
+
+type readonlyDriver struct{}
+
+func (readonlyDriver) Open(string) (driver.Conn, error) { return nil, errors.New("unused") }
+
+type readonlyConn struct {
+	missing   bool
+	queryCode string
+	queries   int
+	updates   int
+}
+
+func (*readonlyConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unused") }
+func (*readonlyConn) Close() error                        { return nil }
+func (*readonlyConn) Begin() (driver.Tx, error)           { return readonlyTx{}, nil }
+
+type readonlyTx struct{}
+
+func (readonlyTx) Commit() error   { return nil }
+func (readonlyTx) Rollback() error { return nil }
+func (c *readonlyConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	c.updates++
+	return nil, errors.New("read-only connection: DDL forbidden")
+}
+func (c *readonlyConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	c.queries++
+	if !strings.Contains(query, "FROM if3110_platform.migration_history") {
+		return nil, errors.New("unexpected query")
+	}
+	if c.queryCode != "" {
+		return nil, &pgconn.PgError{Code: c.queryCode}
+	}
+	if c.missing {
+		return nil, &pgconn.PgError{Code: "42P01"}
+	}
+	return &emptyHistoryRows{}, nil
+}
+
+func TestViewOnlyHistoryDoesNotHidePermissionErrors(t *testing.T) {
+	conn := &readonlyConn{queryCode: "42501"}
+	db := sql.OpenDB(readonlyConnector{conn: conn})
+	t.Cleanup(func() { _ = db.Close() })
+	authz := newFakeAuthorizer()
+	authz.setGrant("viewer", "db-1", contracts.AccessViewOnly)
+	svc, err := NewService(authz, &fakeDatabaseProvider{db: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ListHistory(context.Background(), "viewer", "db-1"); err == nil {
+		t.Fatal("ListHistory hid a permission error")
+	}
+	if _, err := svc.GetMigration(context.Background(), "viewer", "db-1", 1); err == nil || errors.Is(err, ErrMigrationNotFound) {
+		t.Fatalf("GetMigration treated permission error as missing history: %v", err)
+	}
+	if conn.updates != 0 {
+		t.Fatalf("read performed %d writes", conn.updates)
+	}
+}
+
+type emptyHistoryRows struct{}
+
+func (*emptyHistoryRows) Columns() []string {
+	return []string{"id", "version", "title", "sql_text", "status", "created_by", "executed_by", "error_message", "created_at", "updated_at", "executed_at"}
+}
+func (*emptyHistoryRows) Close() error              { return nil }
+func (*emptyHistoryRows) Next([]driver.Value) error { return io.EOF }
+
+func TestViewOnlyHistoryDoesNotExecuteDDL(t *testing.T) {
+	for _, missing := range []bool{true, false} {
+		t.Run(map[bool]string{true: "uninitialized", false: "existing"}[missing], func(t *testing.T) {
+			conn := &readonlyConn{missing: missing}
+			db := sql.OpenDB(readonlyConnector{conn: conn})
+			t.Cleanup(func() { _ = db.Close() })
+			authz := newFakeAuthorizer()
+			authz.setGrant("viewer", "db-1", contracts.AccessViewOnly)
+			svc, err := NewService(authz, &fakeDatabaseProvider{db: db})
+			if err != nil {
+				t.Fatal(err)
+			}
+			history, err := svc.ListHistory(context.Background(), "viewer", "db-1")
+			if err != nil || len(history) != 0 {
+				t.Fatalf("ListHistory = %v, %v; want empty list", history, err)
+			}
+			_, err = svc.GetMigration(context.Background(), "viewer", "db-1", 1)
+			if !errors.Is(err, ErrMigrationNotFound) {
+				t.Fatalf("GetMigration = %v; want ErrMigrationNotFound", err)
+			}
+			if conn.updates != 0 || conn.queries != 2 {
+				t.Fatalf("read performed %d writes and %d queries", conn.updates, conn.queries)
+			}
+		})
+	}
+}
+
+func TestMissingHistoryWritesDoNotInitializeExceptCreation(t *testing.T) {
+	conn := &readonlyConn{missing: true}
+	db := sql.OpenDB(readonlyConnector{conn: conn})
+	t.Cleanup(func() { _ = db.Close() })
+	authz := newFakeAuthorizer()
+	authz.setGrant("editor", "db-1", contracts.AccessViewEdit)
+	svc, err := NewService(authz, &fakeDatabaseProvider{db: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := svc.UpdateDraft(ctx, "editor", "db-1", 1, "title", "SELECT 1"); !errors.Is(err, ErrMigrationNotFound) {
+		t.Fatalf("UpdateDraft = %v; want ErrMigrationNotFound", err)
+	}
+	if _, err := svc.ExecuteMigration(ctx, "editor", "db-1", 1); !errors.Is(err, ErrMigrationNotFound) {
+		t.Fatalf("ExecuteMigration = %v; want ErrMigrationNotFound", err)
+	}
+	if conn.updates != 0 {
+		t.Fatalf("existing-draft operations performed %d DDL writes", conn.updates)
+	}
+	if _, err := svc.CreateDraft(ctx, "editor", "db-1", "title", "SELECT 1"); err == nil {
+		t.Fatal("CreateDraft should fail on a read-only connection")
+	}
+	if conn.updates != 1 {
+		t.Fatalf("CreateDraft performed %d DDL writes; want 1", conn.updates)
+	}
+}
 
 // fake authorizer buat ngetes izin akses per user dan database
 type fakeAuthorizer struct {
@@ -209,4 +339,3 @@ func TestStatusIsValid(t *testing.T) {
 		t.Fatal("expected UNKNOWN status to be invalid")
 	}
 }
-

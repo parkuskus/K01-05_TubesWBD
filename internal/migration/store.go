@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"if3110.local/db-platform/internal/contracts"
 )
 
@@ -55,6 +56,11 @@ func NewPostgresStore(db *sql.DB, databaseID contracts.DatabaseID) (*PostgresSto
 
 func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	return EnsureSchema(ctx, s.db)
+}
+
+func missingHistory(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && (pgErr.Code == "42P01" || pgErr.Code == "3F000")
 }
 
 // simpan draft baru dengan nomor versi berikutnya
@@ -137,6 +143,9 @@ func (s *PostgresStore) UpdateDraft(ctx context.Context, version int64, title, s
 	if errors.Is(err, sql.ErrNoRows) {
 		return MigrationRecord{}, ErrMigrationNotFound
 	}
+	if missingHistory(err) {
+		return MigrationRecord{}, ErrMigrationNotFound
+	}
 	if err != nil {
 		return MigrationRecord{}, err
 	}
@@ -170,6 +179,9 @@ func (s *PostgresStore) List(ctx context.Context) ([]MigrationRecord, error) {
 		FROM if3110_platform.migration_history
 		ORDER BY version ASC`)
 	if err != nil {
+		if missingHistory(err) {
+			return []MigrationRecord{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -202,6 +214,9 @@ func (s *PostgresStore) GetByVersion(ctx context.Context, version int64) (Migrat
 	if errors.Is(err, sql.ErrNoRows) {
 		return MigrationRecord{}, ErrMigrationNotFound
 	}
+	if missingHistory(err) {
+		return MigrationRecord{}, ErrMigrationNotFound
+	}
 	if err != nil {
 		return MigrationRecord{}, err
 	}
@@ -220,6 +235,9 @@ func (s *PostgresStore) GetByID(ctx context.Context, id int64) (MigrationRecord,
 
 	record, err := s.scanRecord(row)
 	if errors.Is(err, sql.ErrNoRows) {
+		return MigrationRecord{}, ErrMigrationNotFound
+	}
+	if missingHistory(err) {
 		return MigrationRecord{}, ErrMigrationNotFound
 	}
 	if err != nil {
@@ -254,6 +272,9 @@ func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, execute
 
 	record, err := s.scanRecord(row)
 	if errors.Is(err, sql.ErrNoRows) {
+		return MigrationRecord{}, ErrMigrationNotFound
+	}
+	if missingHistory(err) {
 		return MigrationRecord{}, ErrMigrationNotFound
 	}
 	if err != nil {
