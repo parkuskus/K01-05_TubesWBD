@@ -33,17 +33,23 @@ type createAccessChecker interface {
 
 // http handler buat halaman dan aksi migration
 type Handler struct {
-	service     MigrationService
-	currentUser func(*http.Request) (contracts.UserID, bool)
+	service      MigrationService
+	createAccess createAccessChecker
+	currentUser  func(*http.Request) (contracts.UserID, bool)
 }
 
 func NewHandler(service MigrationService) (*Handler, error) {
 	if service == nil {
 		return nil, ErrInvalidHandlerConfig
 	}
+	checker, ok := service.(createAccessChecker)
+	if !ok {
+		return nil, ErrInvalidHandlerConfig
+	}
 	return &Handler{
-		service:     service,
-		currentUser: auth.CurrentUser,
+		service:      service,
+		createAccess: checker,
+		currentUser:  auth.CurrentUser,
 	}, nil
 }
 
@@ -102,11 +108,19 @@ func (h *Handler) listHistory(w http.ResponseWriter, r *http.Request) {
 		h.writeServiceError(w, err)
 		return
 	}
+	canEdit := false
+	if err := h.createAccess.RequireCreateAccess(r.Context(), userID, dbID); err == nil {
+		canEdit = true
+	} else if !errors.Is(err, contracts.ErrForbidden) {
+		h.writeServiceError(w, err)
+		return
+	}
 
 	renderComponent(w, r, http.StatusOK, historyPage(HistoryPageData{
 		DatabaseID: string(dbID),
 		CSRFToken:  auth.CSRFToken(r),
 		Records:    records,
+		CanEdit:    canEdit,
 	}))
 }
 
@@ -116,11 +130,9 @@ func (h *Handler) newMigrationPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checker, ok := h.service.(createAccessChecker); ok {
-		if err := checker.RequireCreateAccess(r.Context(), userID, dbID); err != nil {
-			h.writeServiceError(w, err)
-			return
-		}
+	if err := h.createAccess.RequireCreateAccess(r.Context(), userID, dbID); err != nil {
+		h.writeServiceError(w, err)
+		return
 	}
 
 	renderComponent(w, r, http.StatusOK, editorPage(EditorPageData{
@@ -202,11 +214,19 @@ func (h *Handler) getMigrationDetail(w http.ResponseWriter, r *http.Request) {
 		h.writeServiceError(w, err)
 		return
 	}
+	canEdit := false
+	if err := h.createAccess.RequireCreateAccess(r.Context(), userID, dbID); err == nil {
+		canEdit = true
+	} else if !errors.Is(err, contracts.ErrForbidden) {
+		h.writeServiceError(w, err)
+		return
+	}
 
 	renderComponent(w, r, http.StatusOK, detailPage(DetailPageData{
 		DatabaseID: string(dbID),
 		CSRFToken:  auth.CSRFToken(r),
 		Record:     record,
+		CanEdit:    canEdit,
 	}))
 }
 
@@ -332,4 +352,3 @@ func renderComponent(w http.ResponseWriter, r *http.Request, status int, compone
 	w.WriteHeader(status)
 	_, _ = w.Write(body.Bytes())
 }
-

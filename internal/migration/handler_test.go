@@ -257,6 +257,9 @@ func TestHandlerViewOnlyUserCanViewHistoryButCannotMutate(t *testing.T) {
 	if !strings.Contains(body, "#1") || !strings.Contains(body, "buat tabel awal") || !strings.Contains(body, "DRAFT") {
 		t.Fatalf("GET history body missing expected record: %s", body)
 	}
+	if strings.Contains(body, "Buat Migration Baru") {
+		t.Fatal("view-only history offered a migration creation link")
+	}
 
 	// 2. GET detail migration oleh user view-only -> 200 OK
 	detailRec := httptest.NewRecorder()
@@ -413,6 +416,82 @@ func TestHandlerStateChangingPostRequiresCSRFToken(t *testing.T) {
 	}
 }
 
+func TestHandlerUsesSharedLayoutForMigrationPages(t *testing.T) {
+	authz := newFakeAuthorizer()
+	authz.setGrant("editor", "db-prod", contracts.AccessViewEdit)
+	svc := newFakeMigrationService(authz)
+	if _, err := svc.CreateDraft(context.Background(), "editor", "db-prod", "judul", "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+	user := contracts.UserID("editor")
+	router := setupTestMigrationHandler(t, svc, &user, false)
+	for _, path := range []string{
+		"/databases/db-prod/migrations",
+		"/databases/db-prod/migrations/new",
+		"/databases/db-prod/migrations/1",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			body := rec.Body.String()
+			if rec.Code != http.StatusOK || strings.Count(body, "<html") != 1 || strings.Count(body, "<main") != 1 || !strings.Contains(body, `<main><section class="migration-shell">`) || !strings.Contains(body, `href="/static/styles.css"`) {
+				t.Fatalf("page does not use the shared layout: status=%d body=%s", rec.Code, body)
+			}
+		})
+	}
+}
+
+func TestHandlerRejectsServiceWithoutEditorAuthorization(t *testing.T) {
+	svc := newFakeMigrationService(newFakeAuthorizer())
+	withoutCheck := struct{ MigrationService }{svc}
+	if _, err := NewHandler(withoutCheck); !errors.Is(err, ErrInvalidHandlerConfig) {
+		t.Fatalf("NewHandler accepted service without editor access check: %v", err)
+	}
+}
+
+func TestHandlerViewOnlyDetailDoesNotOfferMutationForms(t *testing.T) {
+	authz := newFakeAuthorizer()
+	authz.setGrant("editor", "db-prod", contracts.AccessViewEdit)
+	authz.setGrant("viewer", "db-prod", contracts.AccessViewOnly)
+	svc := newFakeMigrationService(authz)
+	if _, err := svc.CreateDraft(context.Background(), "editor", "db-prod", "judul", "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+	user := contracts.UserID("viewer")
+	router := setupTestMigrationHandler(t, svc, &user, false)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/databases/db-prod/migrations/1", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "SELECT 1") || strings.Contains(rec.Body.String(), `method="post"`) {
+		t.Fatalf("view-only detail exposed mutation controls: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerFailedSQLDoesNotRenderRawDatabaseError(t *testing.T) {
+	authz := newFakeAuthorizer()
+	authz.setGrant("editor", "db-prod", contracts.AccessViewEdit)
+	svc := newFakeMigrationService(authz)
+	svc.failSQL["SELECT 1"] = errors.New("private-database-diagnostic")
+	user := contracts.UserID("editor")
+	router := setupTestMigrationHandler(t, svc, &user, false)
+	rec := sendPostForm(router, "/databases/db-prod/migrations", url.Values{"title": {"judul"}, "sql_text": {"SELECT 1"}, "action": {"run"}}, nil)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "FAILED") || strings.Contains(rec.Body.String(), "private-database-diagnostic") {
+		t.Fatalf("failed migration exposed database error: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerEscapesDatabaseIDInEditorFormURL(t *testing.T) {
+	authz := newFakeAuthorizer()
+	authz.setGrant("editor", "db?private=1", contracts.AccessViewEdit)
+	svc := newFakeMigrationService(authz)
+	user := contracts.UserID("editor")
+	router := setupTestMigrationHandler(t, svc, &user, false)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/databases/db%3Fprivate%3D1/migrations/new", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `action="/databases/db%3Fprivate=1/migrations"`) {
+		t.Fatalf("editor form has unsafe database URL: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func sendPostForm(handler http.Handler, path string, form url.Values, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "http://example.com"+path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -424,4 +503,3 @@ func sendPostForm(handler http.Handler, path string, form url.Values, cookies []
 	handler.ServeHTTP(rec, req)
 	return rec
 }
-

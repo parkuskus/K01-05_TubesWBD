@@ -1,6 +1,8 @@
 package migration
 
 import "strconv"
+import "net/url"
+import "if3110.local/db-platform/internal/ui"
 
 // data tampilan daftar riwayat migration
 type HistoryPageData struct {
@@ -8,6 +10,7 @@ type HistoryPageData struct {
 	CSRFToken    string
 	ErrorMessage string
 	Records      []MigrationRecord
+	CanEdit      bool
 }
 
 // data tampilan editor pembuatan migration baru
@@ -25,6 +28,7 @@ type DetailPageData struct {
 	CSRFToken    string
 	ErrorMessage string
 	Record       MigrationRecord
+	CanEdit      bool
 }
 
 func formatVersion(version int64) string {
@@ -32,40 +36,37 @@ func formatVersion(version int64) string {
 }
 
 func historyURL(dbID string) string {
-	return "/databases/" + dbID + "/migrations"
+	return "/databases/" + url.PathEscape(dbID) + "/migrations"
 }
 
 func newMigrationURL(dbID string) string {
-	return "/databases/" + dbID + "/migrations/new"
+	return historyURL(dbID) + "/new"
 }
 
 func detailMigrationURL(dbID string, version int64) string {
-	return "/databases/" + dbID + "/migrations/" + formatVersion(version)
+	return historyURL(dbID) + "/" + formatVersion(version)
 }
 
 func editMigrationURL(dbID string, version int64) string {
-	return "/databases/" + dbID + "/migrations/" + formatVersion(version) + "/edit"
+	return detailMigrationURL(dbID, version) + "/edit"
 }
 
 func executeMigrationURL(dbID string, version int64) string {
-	return "/databases/" + dbID + "/migrations/" + formatVersion(version) + "/execute"
+	return detailMigrationURL(dbID, version) + "/execute"
 }
 
 templ historyPage(data HistoryPageData) {
-	<!DOCTYPE html>
-	<html lang="id">
-		<head>
-			<meta charset="UTF-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>Riwayat Migration · { data.DatabaseID }</title>
-			<link rel="stylesheet" href="/static/styles.css"/>
-		</head>
-		<body>
-			<main class="migration-shell">
+	@ui.Layout("Riwayat Migration · " + data.DatabaseID, historyContent(data))
+}
+
+templ historyContent(data HistoryPageData) {
+			<section class="migration-shell">
 				<p class="eyebrow">Database · { data.DatabaseID }</p>
 				<header class="migration-header">
 					<h1>Riwayat Migration</h1>
-					<a class="migration-link-button" href={ templ.SafeURL(newMigrationURL(data.DatabaseID)) }>Buat Migration Baru</a>
+					if data.CanEdit {
+						<a class="migration-link-button" href={ templ.URL(newMigrationURL(data.DatabaseID)) }>Buat Migration Baru</a>
+					}
 				</header>
 				if data.ErrorMessage != "" {
 					<p class="error-message" role="alert">{ data.ErrorMessage }</p>
@@ -113,36 +114,29 @@ templ historyPage(data HistoryPageData) {
 										}
 									</td>
 									<td>
-										<a href={ templ.SafeURL(detailMigrationURL(data.DatabaseID, rec.Version)) }>Detail</a>
+										<a href={ templ.URL(detailMigrationURL(data.DatabaseID, rec.Version)) }>Detail</a>
 									</td>
 								</tr>
 							}
 						</tbody>
 					</table>
 				}
-			</main>
-		</body>
-	</html>
+			</section>
 }
 
 templ editorPage(data EditorPageData) {
-	<!DOCTYPE html>
-	<html lang="id">
-		<head>
-			<meta charset="UTF-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>Buat Migration · { data.DatabaseID }</title>
-			<link rel="stylesheet" href="/static/styles.css"/>
-		</head>
-		<body>
-			<main class="migration-shell">
+	@ui.Layout("Buat Migration · " + data.DatabaseID, editorContent(data))
+}
+
+templ editorContent(data EditorPageData) {
+			<section class="migration-shell">
 				<p class="eyebrow">Database · { data.DatabaseID }</p>
 				<h1>Migration Query Editor</h1>
-				<p><a href={ templ.SafeURL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
+				<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
 				if data.ErrorMessage != "" {
 					<p class="error-message" role="alert">{ data.ErrorMessage }</p>
 				}
-				<form class="migration-editor-form" action={ templ.SafeURL(historyURL(data.DatabaseID)) } method="post">
+				<form class="migration-editor-form" action={ templ.URL(historyURL(data.DatabaseID)) } method="post">
 					<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
 					<div class="form-field">
 						<label for="title">Judul / Deskripsi Migration</label>
@@ -157,25 +151,18 @@ templ editorPage(data EditorPageData) {
 						<button type="submit" name="action" value="run">Jalankan Langsung</button>
 					</div>
 				</form>
-			</main>
-		</body>
-	</html>
+			</section>
 }
 
 templ detailPage(data DetailPageData) {
-	<!DOCTYPE html>
-	<html lang="id">
-		<head>
-			<meta charset="UTF-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>Migration #{ formatVersion(data.Record.Version) } · { data.DatabaseID }</title>
-			<link rel="stylesheet" href="/static/styles.css"/>
-		</head>
-		<body>
-			<main class="migration-shell">
+	@ui.Layout("Migration #" + formatVersion(data.Record.Version) + " · " + data.DatabaseID, detailContent(data))
+}
+
+templ detailContent(data DetailPageData) {
+			<section class="migration-shell">
 				<p class="eyebrow">Database · { data.DatabaseID }</p>
 				<h1>Migration #{ formatVersion(data.Record.Version) }</h1>
-				<p><a href={ templ.SafeURL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
+				<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
 				if data.ErrorMessage != "" {
 					<p class="error-message" role="alert">{ data.ErrorMessage }</p>
 				}
@@ -190,17 +177,17 @@ templ detailPage(data DetailPageData) {
 						<p><strong>Waktu eksekusi:</strong> { data.Record.ExecutedAt.Format("2006-01-02 15:04:05 UTC") }</p>
 					}
 					if data.Record.ErrorMessage != "" {
-						<p class="error-message" role="alert"><strong>Error Eksekusi:</strong> { data.Record.ErrorMessage }</p>
+						<p class="error-message" role="alert"><strong>Error Eksekusi:</strong> Eksekusi SQL gagal.</p>
 					}
 				</section>
 				<section class="migration-sql-section">
 					<h2>SQL Migration</h2>
 					<pre class="migration-sql-preview"><code>{ data.Record.SQLText }</code></pre>
 				</section>
-				if data.Record.Status == StatusDraft {
+				if data.Record.Status == StatusDraft && data.CanEdit {
 					<section class="migration-draft-controls">
 						<h2>Ubah Draft SQL</h2>
-						<form class="migration-editor-form" action={ templ.SafeURL(editMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
+						<form class="migration-editor-form" action={ templ.URL(editMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
 							<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
 							<div class="form-field">
 								<label for="title">Judul / Deskripsi Migration</label>
@@ -212,14 +199,12 @@ templ detailPage(data DetailPageData) {
 							</div>
 							<button type="submit">Simpan Perubahan Draft</button>
 						</form>
-						<form class="migration-execute-form" action={ templ.SafeURL(executeMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
+						<form class="migration-execute-form" action={ templ.URL(executeMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
 							<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
 							<button type="submit">Eksekusi Migration (Transaction)</button>
 						</form>
 					</section>
 				}
-			</main>
-		</body>
-	</html>
+			</section>
 }
 
