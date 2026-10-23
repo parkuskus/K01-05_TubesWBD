@@ -378,11 +378,15 @@ func (s *PostgresStore) markDraftFailed(ctx context.Context, version int64, exec
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE if3110_platform.migration_history
 		SET status = $2, executed_by = $3, error_message = $4, updated_at = $5, executed_at = $5
-		WHERE version = $1
+		WHERE version = $1 AND status = 'DRAFT'
 		RETURNING id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at`,
 		version, string(StatusFailed), string(executedBy), errMsg, now,
 	)
-	return s.scanRecord(row)
+	record, err := s.scanRecord(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MigrationRecord{}, ErrMigrationAlreadyApplied
+	}
+	return record, err
 }
 
 func (s *PostgresStore) insertFailedRun(ctx context.Context, title, sqlText string, executedBy contracts.UserID, errMsg string, now time.Time) (MigrationRecord, error) {

@@ -7,37 +7,31 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/joho/godotenv"
 	"if3110.local/db-platform/internal/contracts"
 )
 
-func testDatabaseURL(dotenvPath string, lookup func(string) (string, bool)) (string, error) {
-	if dsn, ok := lookup("PLATFORM_TEST_DATABASE_URL"); ok && dsn != "" {
-		return dsn, nil
+var errMigrationTestSchemaExists = errors.New("migration history schema already exists in the selected test database")
+
+func requireUnusedMigrationSchema(ctx context.Context, db *sql.DB) error {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname='if3110_platform')`).Scan(&exists); err != nil {
+		return err
 	}
-	values, err := godotenv.Read(dotenvPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+	if exists {
+		return errMigrationTestSchemaExists
 	}
-	if err != nil {
-		return "", errors.New("could not load test environment file")
-	}
-	return values["PLATFORM_TEST_DATABASE_URL"], nil
+	return nil
 }
 
 func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
-	dsn, err := testDatabaseURL(filepath.Join("..", "..", ".env"), os.LookupEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dsn := os.Getenv("PLATFORM_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("set PLATFORM_TEST_DATABASE_URL in the process environment or root .env to a dedicated PostgreSQL test database")
+		t.Skip("set PLATFORM_TEST_DATABASE_URL in the process environment to a disposable PostgreSQL database without if3110_platform")
 	}
 
 	adminDB, err := sql.Open("pgx", dsn)
@@ -49,6 +43,13 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 			t.Errorf("close admin test database: %v", err)
 		}
 	})
+	ctx := context.Background()
+	if err := requireUnusedMigrationSchema(ctx, adminDB); err != nil {
+		if errors.Is(err, errMigrationTestSchemaExists) {
+			t.Skip("history schema already exists; refusing to modify it")
+		}
+		t.Fatal(err)
+	}
 
 	randomBytes := make([]byte, 8)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -58,16 +59,15 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	if _, err := adminDB.Exec(`CREATE SCHEMA ` + appSchema); err != nil {
 		t.Fatal(err)
 	}
-	// bersihkan schema if3110_platform dan schema test sebelum & sesudah pengujian
-	if _, err := adminDB.Exec(`DROP SCHEMA IF EXISTS if3110_platform CASCADE`); err != nil {
-		t.Fatal(err)
-	}
+	historyCreated := false
 	t.Cleanup(func() {
 		if _, err := adminDB.Exec(`DROP SCHEMA IF EXISTS ` + appSchema + ` CASCADE`); err != nil {
 			t.Errorf("drop test app schema: %v", err)
 		}
-		if _, err := adminDB.Exec(`DROP SCHEMA IF EXISTS if3110_platform CASCADE`); err != nil {
-			t.Errorf("drop migration platform schema: %v", err)
+		if historyCreated {
+			if _, err := adminDB.Exec(`DROP SCHEMA IF EXISTS if3110_platform CASCADE`); err != nil {
+				t.Errorf("drop test-owned migration history schema: %v", err)
+			}
 		}
 	})
 
@@ -78,7 +78,6 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	db.SetMaxOpenConns(1)
 	defer db.Close()
 
-	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, `SET search_path TO `+appSchema); err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +100,7 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	svc.now = func() time.Time { return fixedNow }
 
 	// 1. buat draft migration versi 1, ubah sql-nya, lalu jalankan (skenario sukses commit)
+	historyCreated = true
 	draft1, err := svc.CreateDraft(ctx, editorUser, targetDB, "buat tabel buku", `CREATE TABLE books (id INT PRIMARY KEY, title TEXT NOT NULL);`)
 	if err != nil {
 		t.Fatalf("CreateDraft() error = %v", err)
