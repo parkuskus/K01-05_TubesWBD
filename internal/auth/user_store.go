@@ -24,6 +24,14 @@ type userRecord struct {
 	IsPlatformAdmin bool
 }
 
+// LoginProof is valid only while the account's credentials and admin status remain unchanged.
+// Its credential snapshot stays inside the auth package.
+type LoginProof struct {
+	UserID          contracts.UserID
+	passwordHash    string
+	isPlatformAdmin bool
+}
+
 type userStore interface {
 	FindByUsername(ctx context.Context, username string) (userRecord, error)
 	EnsureInitialAdmin(ctx context.Context, username, passwordHash string) error
@@ -42,21 +50,26 @@ func NewAuthenticator(db *sql.DB) *Authenticator {
 }
 
 func (a *Authenticator) Authenticate(ctx context.Context, username, password string) (contracts.UserID, error) {
+	proof, err := a.AuthenticateForSession(ctx, username, password)
+	return proof.UserID, err
+}
+
+func (a *Authenticator) AuthenticateForSession(ctx context.Context, username, password string) (LoginProof, error) {
 	normalized, err := normalizeUsername(username)
 	if err != nil || password == "" || len(password) > 72 {
-		return "", ErrInvalidCredentials
+		return LoginProof{}, ErrInvalidCredentials
 	}
 	user, err := a.store.FindByUsername(ctx, normalized)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
-			return "", ErrInvalidCredentials
+			return LoginProof{}, ErrInvalidCredentials
 		}
-		return "", err
+		return LoginProof{}, err
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return "", ErrInvalidCredentials
+		return LoginProof{}, ErrInvalidCredentials
 	}
-	return user.ID, nil
+	return LoginProof{UserID: user.ID, passwordHash: user.PasswordHash, isPlatformAdmin: user.IsPlatformAdmin}, nil
 }
 
 func (a *Authenticator) EnsureInitialAdmin(ctx context.Context, username, password string) error {
@@ -67,11 +80,11 @@ func (a *Authenticator) EnsureInitialAdmin(ctx context.Context, username, passwo
 	if err != nil || password == "" || len(password) > 72 {
 		return ErrBootstrapCredentialsRequired
 	}
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	passwordHash, err := HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("hash initial admin password: %w", err)
 	}
-	return a.store.EnsureInitialAdmin(ctx, normalized, string(passwordHash))
+	return a.store.EnsureInitialAdmin(ctx, normalized, passwordHash)
 }
 
 func normalizeUsername(username string) (string, error) {
@@ -80,6 +93,21 @@ func normalizeUsername(username string) (string, error) {
 		return "", ErrInvalidCredentials
 	}
 	return username, nil
+}
+
+// NormalizeUsername applies the same rules for login, bootstrap, and administration.
+func NormalizeUsername(username string) (string, error) { return normalizeUsername(username) }
+
+// HashPassword uses the same bcrypt cost and byte limit as bootstrap.
+func HashPassword(password string) (string, error) {
+	if password == "" || len(password) > 72 {
+		return "", ErrInvalidCredentials
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
 }
 
 func (s *postgresUserStore) FindByUsername(ctx context.Context, username string) (userRecord, error) {

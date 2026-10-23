@@ -20,24 +20,40 @@ type fakeAuthenticator struct {
 	called   int
 }
 
-func (a *fakeAuthenticator) Authenticate(_ context.Context, username, password string) (contracts.UserID, error) {
+func (a *fakeAuthenticator) AuthenticateForSession(_ context.Context, username, password string) (auth.LoginProof, error) {
 	a.called++
 	if username != a.username || password != a.password {
-		return "", auth.ErrInvalidCredentials
+		return auth.LoginProof{}, auth.ErrInvalidCredentials
 	}
-	return a.userID, nil
+	return auth.LoginProof{UserID: a.userID}, nil
 }
 
 type fakeSessions struct {
 	authenticated bool
 	createdFor    contracts.UserID
 	logoutCalls   int
+	createErr     error
 }
 
-func (s *fakeSessions) Create(_ http.ResponseWriter, _ *http.Request, userID contracts.UserID) error {
+func (s *fakeSessions) Create(_ http.ResponseWriter, _ *http.Request, proof auth.LoginProof) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
 	s.authenticated = true
-	s.createdFor = userID
+	s.createdFor = proof.UserID
 	return nil
+}
+
+func TestStaleLoginProofDoesNotRedirectOrIssueSession(t *testing.T) {
+	handler, _, sessions := newTestServer(t)
+	sessions.createErr = auth.ErrUnauthenticated
+	csrfCookies, token := getCSRFToken(t, handler, "/login")
+	response := postForm(handler, "/login", url.Values{
+		"username": {"admin"}, "password": {"secret-password"}, "gorilla.csrf.Token": {token},
+	}, csrfCookies)
+	if response.Code != http.StatusUnauthorized || sessions.authenticated || response.Header().Get("Location") != "" {
+		t.Fatalf("stale login = status %d, authenticated %t, location %q", response.Code, sessions.authenticated, response.Header().Get("Location"))
+	}
 }
 
 func (s *fakeSessions) RequireSession(next http.Handler) http.Handler {

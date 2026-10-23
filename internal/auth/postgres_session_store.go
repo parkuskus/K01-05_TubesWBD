@@ -13,12 +13,21 @@ type postgresSessionStore struct {
 	db *sql.DB
 }
 
-func (s *postgresSessionStore) Create(ctx context.Context, userID contracts.UserID, tokenHash, previousTokenHash []byte, now, expiresAt time.Time, idleTimeout time.Duration) (sessionRecord, error) {
+func (s *postgresSessionStore) Create(ctx context.Context, proof LoginProof, tokenHash, previousTokenHash []byte, now, expiresAt time.Time, idleTimeout time.Duration) (sessionRecord, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return sessionRecord{}, err
 	}
 	defer tx.Rollback()
+	// Lock the account before touching sessions so deletion cannot race a new login.
+	var exists int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id::text = $1 AND password_hash = $2 AND is_platform_admin = $3 FOR SHARE`, proof.UserID, proof.passwordHash, proof.isPlatformAdmin).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sessionRecord{}, ErrUnauthenticated
+	}
+	if err != nil {
+		return sessionRecord{}, err
+	}
 
 	if len(previousTokenHash) != 0 {
 		_, err = tx.ExecContext(ctx, `
@@ -49,7 +58,7 @@ func (s *postgresSessionStore) Create(ctx context.Context, userID contracts.User
 	}
 
 	var record sessionRecord
-	record.UserID = userID
+	record.UserID = proof.UserID
 	record.CreatedAt = now
 	record.LastSeenAt = now
 	record.AbsoluteExpiresAt = expiresAt
@@ -57,7 +66,7 @@ func (s *postgresSessionStore) Create(ctx context.Context, userID contracts.User
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO sessions (user_id, created_at, last_seen_at, absolute_expires_at, rotated_at)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`, userID, now, now, expiresAt, now).Scan(&record.ID); err != nil {
+		RETURNING id`, proof.UserID, now, now, expiresAt, now).Scan(&record.ID); err != nil {
 		return sessionRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -84,6 +93,7 @@ func (s *postgresSessionStore) LoadAndTouch(ctx context.Context, tokenHash []byt
 		       (t.valid_until IS NOT NULL)
 		FROM session_tokens AS t
 		JOIN sessions AS s ON s.id = t.session_id
+		JOIN users AS u ON u.id::text = s.user_id
 		WHERE t.token_hash = $1
 		  AND (t.valid_until IS NULL OR t.valid_until > $2)
 		  AND s.revoked_at IS NULL
@@ -122,6 +132,7 @@ func (s *postgresSessionStore) Rotate(ctx context.Context, sessionID int64, pres
 		SELECT s.id, s.user_id, s.created_at, s.last_seen_at, s.absolute_expires_at, s.rotated_at
 		FROM session_tokens AS t
 		JOIN sessions AS s ON s.id = t.session_id
+		JOIN users AS u ON u.id::text = s.user_id
 		WHERE t.token_hash = $1
 		  AND s.id = $2
 		  AND (t.valid_until IS NULL OR t.valid_until > $3)

@@ -30,7 +30,7 @@ func (h authHandlers) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.authenticator.Authenticate(r.Context(), r.PostForm.Get("username"), r.PostForm.Get("password"))
+	proof, err := h.authenticator.AuthenticateForSession(r.Context(), r.PostForm.Get("username"), r.PostForm.Get("password"))
 	if errors.Is(err, auth.ErrInvalidCredentials) {
 		h.renderLogin(w, r, http.StatusUnauthorized, "Username atau password salah.")
 		return
@@ -39,7 +39,10 @@ func (h authHandlers) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Login sementara tidak tersedia.", http.StatusServiceUnavailable)
 		return
 	}
-	if err := h.sessions.Create(w, r, userID); err != nil {
+	if err := h.sessions.Create(w, r, proof); errors.Is(err, auth.ErrUnauthenticated) {
+		h.renderLogin(w, r, http.StatusUnauthorized, "Username atau password salah.")
+		return
+	} else if err != nil {
 		http.Error(w, "Login sementara tidak tersedia.", http.StatusServiceUnavailable)
 		return
 	}
