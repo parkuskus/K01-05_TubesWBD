@@ -171,6 +171,8 @@ Riwayat migration disimpan **di setiap database target**, bukan di database plat
 
 **Status keputusan:** aturan agregasi grant dan pemisahan hak Platform Admin telah disetujui tim. Batas provider koneksi, lokasi riwayat migration, dan batas UI/route adalah keputusan yang disetujui Aufar dan menunggu tinjauan Emil serta Kevin. `internal/ui`, repository authorization, provider koneksi, dan modul fitur tersebut belum diimplementasikan. Kebijakan session yang digunakan adalah idle 30 menit, absolute 12 jam, rotasi 15 menit, dan grace period 30 detik.
 
+**Usulan handoff administrasi platform (perlu tinjauan Kevin/Emil):** `internal/platform` mulai menyediakan model `User` (ID, username, status admin), `Group` (ID, nama), dan `Grant` (ID group, ID database, level); tidak ada hash password atau kredensial koneksi di model publik. Service administrasi yang akan dipakai UI Kevin direncanakan memiliki operasi daftar/buat/ubah/hapus user dan group, atur keanggotaan, serta daftar/atur grant; setiap operasi menerima ID aktor terautentikasi dan memeriksa status Platform Admin di backend. ID database pada grant harus merujuk ID koneksi terdaftar milik Emil. Perubahan schema platform diurutkan: `0003_create_groups.sql` (Aufar: group/keanggotaan), migration koneksi (Emil), lalu migration grant (Aufar, setelah nama tabel dan ID koneksi dikonfirmasi). Ini **belum** menyatakan service, tabel koneksi, atau tabel grant telah tersedia.
+
 ## Test dan pemeriksaan
 
 Jalankan dari root proyek:
