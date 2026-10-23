@@ -40,15 +40,21 @@ type grantRepository interface {
 	setGrant(context.Context, int64, int64, int64, contracts.AccessLevel) error
 }
 
+type authorizationRepository interface {
+	isPlatformAdmin(context.Context, int64) (bool, error)
+	databaseAccess(context.Context, int64, int64) ([]contracts.AccessLevel, error)
+}
+
 type Service struct {
-	users  userRepository
-	groups groupRepository
-	grants grantRepository
+	users         userRepository
+	groups        groupRepository
+	grants        grantRepository
+	authorization authorizationRepository
 }
 
 func NewService(db *sql.DB) *Service {
 	repository := &postgresRepository{db: db}
-	return &Service{users: repository, groups: repository, grants: repository}
+	return &Service{users: repository, groups: repository, grants: repository, authorization: repository}
 }
 
 func positiveID(id contracts.UserID) (int64, error) {
