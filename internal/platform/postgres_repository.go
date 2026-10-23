@@ -360,3 +360,37 @@ func (p *postgresRepository) setGrant(ctx context.Context, actor, group, databas
 		return err
 	})
 }
+
+func (p *postgresRepository) isPlatformAdmin(ctx context.Context, user int64) (bool, error) {
+	var admin bool
+	err := p.db.QueryRowContext(ctx, `SELECT is_platform_admin FROM users WHERE id = $1`, user).Scan(&admin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return admin, err
+}
+
+func (p *postgresRepository) databaseAccess(ctx context.Context, user, database int64) ([]contracts.AccessLevel, error) {
+	rows, err := p.db.QueryContext(ctx, `SELECT a.level FROM group_memberships AS m
+		JOIN group_database_access AS a ON a.group_id = m.group_id
+		WHERE m.user_id = $1 AND a.database_id = $2`, user, database)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var grants []contracts.AccessLevel
+	for rows.Next() {
+		var level int64
+		if err := rows.Scan(&level); err != nil {
+			return nil, err
+		}
+		if level < 0 || level > int64(contracts.AccessViewEdit) {
+			return []contracts.AccessLevel{255}, nil
+		}
+		grants = append(grants, contracts.AccessLevel(level))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return grants, nil
+}

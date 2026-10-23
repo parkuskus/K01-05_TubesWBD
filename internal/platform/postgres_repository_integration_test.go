@@ -67,6 +67,45 @@ func platformTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestRequirePlatformAdminReadsCurrentRole(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	root, err := login.Authenticate(ctx, "root", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	member, err := s.CreateUser(ctx, root, "member", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequirePlatformAdmin(ctx, member); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("ordinary user: %v", err)
+	}
+	if err := s.RequirePlatformAdmin(ctx, "999999"); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("missing user: %v", err)
+	}
+	if err := s.RequirePlatformAdmin(ctx, root); err != nil {
+		t.Fatalf("admin: %v", err)
+	}
+	if err := s.SetPlatformAdmin(ctx, root, member, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequirePlatformAdmin(ctx, member); err != nil {
+		t.Fatalf("promoted user: %v", err)
+	}
+	if err := s.SetPlatformAdmin(ctx, root, member, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequirePlatformAdmin(ctx, member); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("demoted user: %v", err)
+	}
+}
+
 func TestAdminUsersSessionAndLastAdmin(t *testing.T) {
 	db := platformTestDB(t)
 	ctx := context.Background()
