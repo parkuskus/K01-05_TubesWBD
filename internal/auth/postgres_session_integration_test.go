@@ -13,7 +13,6 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/db/migrations"
-	"if3110.local/db-platform/internal/contracts"
 )
 
 func TestPostgresSessionStoreLifecycle(t *testing.T) {
@@ -77,6 +76,10 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	if err != nil || userID == "" {
 		t.Fatalf("Authenticate() = (%q, %v), want a user ID", userID, err)
 	}
+	proof, err := authenticator.AuthenticateForSession(ctx, "root", "initial-password-123")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := authenticator.Authenticate(ctx, "root", "wrong-password"); err != ErrInvalidCredentials {
 		t.Fatalf("wrong password error = %v, want ErrInvalidCredentials", err)
 	}
@@ -103,11 +106,14 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	idleTimeout := 30 * time.Minute
 	oldHash := sha256.Sum256([]byte("old-token"))
-	created, err := store.Create(ctx, contracts.UserID("test-user"), oldHash[:], nil, now, now.Add(12*time.Hour), idleTimeout)
+	if _, err := store.Create(ctx, LoginProof{UserID: "99999999", passwordHash: proof.passwordHash, isPlatformAdmin: true}, oldHash[:], nil, now, now.Add(12*time.Hour), idleTimeout); err != ErrUnauthenticated {
+		t.Fatalf("session for missing user: %v", err)
+	}
+	created, err := store.Create(ctx, proof, oldHash[:], nil, now, now.Add(12*time.Hour), idleTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.ID == 0 || created.UserID != "test-user" {
+	if created.ID == 0 || created.UserID != userID {
 		t.Fatalf("created session = %+v", created)
 	}
 
@@ -140,7 +146,7 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	}
 
 	secondHash := sha256.Sum256([]byte("user-revocation-token"))
-	second, err := store.Create(ctx, contracts.UserID("test-user"), secondHash[:], nil, now, now.Add(12*time.Hour), idleTimeout)
+	second, err := store.Create(ctx, proof, secondHash[:], nil, now, now.Add(12*time.Hour), idleTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,10 +162,20 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 		t.Fatalf("older request moved last_seen_at backward: got %v, want %v", loadedAfterOlderRequest.LastSeenAt, futureSeenAt)
 	}
 
-	if err := store.RevokeUser(ctx, "test-user", rotatedAt.Add(32*time.Second)); err != nil {
+	if err := store.RevokeUser(ctx, userID, rotatedAt.Add(32*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.LoadAndTouch(ctx, secondHash[:], rotatedAt.Add(33*time.Second), idleTimeout); err != ErrUnauthenticated {
 		t.Fatalf("revoked user session error = %v, want ErrUnauthenticated", err)
+	}
+	thirdHash := sha256.Sum256([]byte("orphan-token"))
+	if _, err := store.Create(ctx, proof, thirdHash[:], nil, now, now.Add(12*time.Hour), idleTimeout); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM users WHERE id::text = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LoadAndTouch(ctx, thirdHash[:], now.Add(time.Minute), idleTimeout); err != ErrUnauthenticated {
+		t.Fatalf("deleted user session error = %v, want ErrUnauthenticated", err)
 	}
 }

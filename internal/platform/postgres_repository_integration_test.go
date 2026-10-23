@@ -1,16 +1,25 @@
 package platform_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/db/migrations"
+	"if3110.local/db-platform/internal/auth"
+	"if3110.local/db-platform/internal/contracts"
+	"if3110.local/db-platform/internal/platform"
 )
 
 func platformTestDB(t *testing.T) *sql.DB {
@@ -56,6 +65,224 @@ func platformTestDB(t *testing.T) *sql.DB {
 		t.Fatal("could not apply platform migrations")
 	}
 	return db
+}
+
+func TestAdminUsersSessionAndLastAdmin(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	root, err := login.Authenticate(ctx, "root", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	if _, err := s.CreateUser(ctx, "99999", "intruder", "password"); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("non-admin: %v", err)
+	}
+	user, err := s.CreateUser(ctx, root, "  MEMBER  ", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateUser(ctx, root, "member", "password"); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	list, err := s.ListUsers(ctx, root)
+	if err != nil || len(list) != 2 || list[1].Username != "member" {
+		t.Fatalf("list users: %v (%v)", list, err)
+	}
+	if _, err := login.Authenticate(ctx, "member", "original-password"); err != nil {
+		t.Fatal("new account cannot log in")
+	}
+
+	// Sessions deliberately contain only hashed tokens. Revocation must remove both current and grace tokens.
+	var sessionID int64
+	if err := db.QueryRow(`INSERT INTO sessions (user_id,created_at,last_seen_at,absolute_expires_at,rotated_at) VALUES ($1,now(),now(),now()+interval '12 hours',now()) RETURNING id`, user).Scan(&sessionID); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []byte{1, 2} {
+		if _, err := db.Exec(`INSERT INTO session_tokens (token_hash,session_id,valid_until) VALUES ($1,$2,$3)`, bytes.Repeat([]byte{token}, 32), sessionID, time.Now().Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetPassword(ctx, root, user, "replacement-password"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM session_tokens WHERE session_id=$1`, sessionID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("tokens after password change: %d, %v", count, err)
+	}
+	if _, err := login.Authenticate(ctx, "member", "original-password"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("old password works: %v", err)
+	}
+	if _, err := login.Authenticate(ctx, "member", "replacement-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPlatformAdmin(ctx, root, root, false); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("demote last admin: %v", err)
+	}
+	if err := s.DeleteUser(ctx, root, root); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("delete last admin: %v", err)
+	}
+	if err := s.SetPlatformAdmin(ctx, root, user, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPlatformAdmin(ctx, root, root, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ListUsers(ctx, root); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("demoted actor still admin: %v", err)
+	}
+	if err := s.DeleteUser(ctx, user, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(ctx, user, user); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("delete last remaining admin: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM users WHERE is_platform_admin`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("remaining admins: %d, %v", count, err)
+	}
+}
+
+func TestConcurrentAdminDemotionKeepsOneAdmin(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	second, err := s.CreateUser(ctx, first, "second", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPlatformAdmin(ctx, first, second, true); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, id := range []contracts.UserID{first, second} {
+		wg.Add(1)
+		go func(id contracts.UserID) { defer wg.Done(); <-start; results <- s.SetPlatformAdmin(ctx, id, id, false) }(id)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	var success, denied int
+	for err := range results {
+		if err == nil {
+			success++
+		} else if errors.Is(err, platform.ErrConflict) || errors.Is(err, contracts.ErrForbidden) {
+			denied++
+		} else {
+			t.Fatalf("unexpected demotion error: %v", err)
+		}
+	}
+	var admins int
+	if err := db.QueryRow(`SELECT count(*) FROM users WHERE is_platform_admin`).Scan(&admins); err != nil || admins != 1 || success != 1 || denied != 1 {
+		t.Fatalf("admins=%d success=%d denied=%d error=%v", admins, success, denied, err)
+	}
+}
+
+func TestPasswordChangeRollsBackWhenSessionRevocationFails(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	root, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	user, err := s.CreateUser(ctx, root, "member", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (user_id,created_at,last_seen_at,absolute_expires_at,rotated_at) VALUES ($1,now(),now(),now()+interval '12 hours',now())`, user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE FUNCTION fail_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test revocation failure'; END $$`); err != nil {
+		t.Fatal("could not install test-only trigger function")
+	}
+	if _, err := db.Exec(`CREATE TRIGGER fail_session_revoke BEFORE UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION fail_revoke()`); err != nil {
+		t.Fatal("could not install test-only trigger")
+	}
+	if err := s.SetPassword(ctx, root, user, "new-password"); err == nil {
+		t.Fatal("revocation failure allowed password change")
+	}
+	if _, err := login.Authenticate(ctx, "member", "original-password"); err != nil {
+		t.Fatalf("failed transaction changed password: %v", err)
+	}
+	if _, err := login.Authenticate(ctx, "member", "new-password"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("new password accepted after rollback: %v", err)
+	}
+	var revoked bool
+	if err := db.QueryRow(`SELECT revoked_at IS NOT NULL FROM sessions WHERE user_id=$1`, user).Scan(&revoked); err != nil || revoked {
+		t.Fatalf("failed transaction changed session: revoked=%t error=%v", revoked, err)
+	}
+}
+
+func TestLoginProofRejectsSessionAfterPasswordOrRoleChange(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "root-password"); err != nil {
+		t.Fatal(err)
+	}
+	root, err := login.Authenticate(ctx, "root", "root-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := platform.NewService(db)
+	user, err := svc.CreateUser(ctx, root, "member", "old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := login.AuthenticateForSession(ctx, "member", "old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := auth.NewSessionManager(db, auth.SessionConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPassword(ctx, root, user, "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/login", nil)
+	if err := sessions.Create(response, request, proof); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("stale password proof created session: %v", err)
+	}
+	if len(response.Result().Cookies()) != 0 {
+		t.Fatal("failed login issued session cookie")
+	}
+	proof, err = login.AuthenticateForSession(ctx, "member", "new-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPlatformAdmin(ctx, root, user, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.Create(httptest.NewRecorder(), request, proof); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("stale role proof created session: %v", err)
+	}
+	proof, err = login.AuthenticateForSession(ctx, "member", "new-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.Create(httptest.NewRecorder(), request, proof); err != nil {
+		t.Fatalf("current proof rejected: %v", err)
+	}
 }
 
 func TestGroupNameRejectsBlankAndCaseInsensitiveDuplicate(t *testing.T) {

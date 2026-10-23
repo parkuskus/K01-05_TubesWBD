@@ -31,7 +31,7 @@ func newFakeSessionStore() *fakeSessionStore {
 	return &fakeSessionStore{sessions: make(map[int64]*fakeSession), tokens: make(map[[sha256.Size]byte]fakeToken)}
 }
 
-func (s *fakeSessionStore) Create(_ context.Context, userID contracts.UserID, tokenHash, previousTokenHash []byte, now, expiresAt time.Time, idleTimeout time.Duration) (sessionRecord, error) {
+func (s *fakeSessionStore) Create(_ context.Context, proof LoginProof, tokenHash, previousTokenHash []byte, now, expiresAt time.Time, idleTimeout time.Duration) (sessionRecord, error) {
 	if len(previousTokenHash) == sha256.Size {
 		var previous [sha256.Size]byte
 		copy(previous[:], previousTokenHash)
@@ -41,7 +41,7 @@ func (s *fakeSessionStore) Create(_ context.Context, userID contracts.UserID, to
 	}
 	s.sweep(now, idleTimeout)
 	s.nextID++
-	record := sessionRecord{ID: s.nextID, UserID: userID, CreatedAt: now, LastSeenAt: now, AbsoluteExpiresAt: expiresAt, RotatedAt: now}
+	record := sessionRecord{ID: s.nextID, UserID: proof.UserID, CreatedAt: now, LastSeenAt: now, AbsoluteExpiresAt: expiresAt, RotatedAt: now}
 	s.sessions[record.ID] = &fakeSession{record: record}
 	var hash [sha256.Size]byte
 	copy(hash[:], tokenHash)
@@ -124,7 +124,7 @@ func TestCreateSessionSetsOpaqueSecureCookie(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/login", nil)
 
-	if err := manager.Create(response, request, contracts.UserID("user-1")); err != nil {
+	if err := manager.Create(response, request, LoginProof{UserID: "user-1", passwordHash: "test-hash"}); err != nil {
 		t.Fatal(err)
 	}
 	cookies := response.Result().Cookies()
@@ -155,7 +155,7 @@ func TestRequireSessionRotatesAndHonorsGraceAndAbsoluteExpiration(t *testing.T) 
 	store := newFakeSessionStore()
 	manager := newTestSessionManager(t, store)
 	loginResponse := httptest.NewRecorder()
-	if err := manager.Create(loginResponse, httptest.NewRequest(http.MethodPost, "/login", nil), "user-1"); err != nil {
+	if err := manager.Create(loginResponse, httptest.NewRequest(http.MethodPost, "/login", nil), LoginProof{UserID: "user-1", passwordHash: "test-hash"}); err != nil {
 		t.Fatal(err)
 	}
 	oldCookie := loginResponse.Result().Cookies()[0]
@@ -219,7 +219,7 @@ func TestIdleExpirationAndLogoutRevokeSession(t *testing.T) {
 	store := newFakeSessionStore()
 	manager := newTestSessionManager(t, store)
 	loginResponse := httptest.NewRecorder()
-	if err := manager.Create(loginResponse, httptest.NewRequest(http.MethodPost, "/login", nil), "user-1"); err != nil {
+	if err := manager.Create(loginResponse, httptest.NewRequest(http.MethodPost, "/login", nil), LoginProof{UserID: "user-1", passwordHash: "test-hash"}); err != nil {
 		t.Fatal(err)
 	}
 	cookie := loginResponse.Result().Cookies()[0]
@@ -261,7 +261,7 @@ func TestRevokeUserInvalidatesAllSessions(t *testing.T) {
 	manager.now = func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }
 	makeSession := func(userID contracts.UserID) *http.Cookie {
 		response := httptest.NewRecorder()
-		if err := manager.Create(response, httptest.NewRequest(http.MethodPost, "/login", nil), userID); err != nil {
+		if err := manager.Create(response, httptest.NewRequest(http.MethodPost, "/login", nil), LoginProof{UserID: userID, passwordHash: "test-hash"}); err != nil {
 			t.Fatal(err)
 		}
 		return response.Result().Cookies()[0]
