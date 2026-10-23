@@ -33,14 +33,18 @@ type createAccessChecker interface {
 
 // http handler buat halaman dan aksi migration
 type Handler struct {
-	service MigrationService
+	service     MigrationService
+	currentUser func(*http.Request) (contracts.UserID, bool)
 }
 
 func NewHandler(service MigrationService) (*Handler, error) {
 	if service == nil {
 		return nil, ErrInvalidHandlerConfig
 	}
-	return &Handler{service: service}, nil
+	return &Handler{
+		service:     service,
+		currentUser: auth.CurrentUser,
+	}, nil
 }
 
 // daftarkan semua route modul migration ke mux
@@ -75,7 +79,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, wrap ...func(http.Handler) 
 }
 
 func (h *Handler) redirectRootMigrations(w http.ResponseWriter, r *http.Request) {
-	if _, ok := auth.CurrentUser(r); !ok {
+	if _, ok := h.resolveUser(r); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -257,7 +261,7 @@ func (h *Handler) executeMigration(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) requireUserAndDatabase(w http.ResponseWriter, r *http.Request) (contracts.UserID, contracts.DatabaseID, bool) {
-	userID, ok := auth.CurrentUser(r)
+	userID, ok := h.resolveUser(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", "", false
@@ -268,6 +272,13 @@ func (h *Handler) requireUserAndDatabase(w http.ResponseWriter, r *http.Request)
 		return "", "", false
 	}
 	return userID, contracts.DatabaseID(dbID), true
+}
+
+func (h *Handler) resolveUser(r *http.Request) (contracts.UserID, bool) {
+	if h.currentUser != nil {
+		return h.currentUser(r)
+	}
+	return auth.CurrentUser(r)
 }
 
 func (h *Handler) requireUserDatabaseAndVersion(w http.ResponseWriter, r *http.Request) (contracts.UserID, contracts.DatabaseID, int64, bool) {
