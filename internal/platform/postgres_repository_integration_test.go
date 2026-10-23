@@ -324,6 +324,71 @@ func TestLoginProofRejectsSessionAfterPasswordOrRoleChange(t *testing.T) {
 	}
 }
 
+func TestLoginCannotKeepSessionForDeletedUser(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "root-password"); err != nil {
+		t.Fatal(err)
+	}
+	root, err := login.Authenticate(ctx, "root", "root-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := platform.NewService(db)
+	sessions, err := auth.NewSessionManager(db, auth.SessionConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/login", nil)
+
+	// Deletion wins between password verification and issuing a session.
+	first, err := svc.CreateUser(ctx, root, "first", "user-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleProof, err := login.AuthenticateForSession(ctx, "first", "user-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteUser(ctx, root, first); err != nil {
+		t.Fatal(err)
+	}
+	failed := httptest.NewRecorder()
+	if err := sessions.Create(failed, request, staleProof); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("deleted user acquired a session: %v", err)
+	}
+	if len(failed.Result().Cookies()) != 0 {
+		t.Fatal("deleted user received a session cookie")
+	}
+
+	// Login wins first; deletion must invalidate the issued cookie.
+	second, err := svc.CreateUser(ctx, root, "second", "user-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := login.AuthenticateForSession(ctx, "second", "user-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	if err := sessions.Create(response, request, proof); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteUser(ctx, root, second); err != nil {
+		t.Fatal(err)
+	}
+	protected := httptest.NewRequest(http.MethodGet, "/private", nil)
+	protected.AddCookie(response.Result().Cookies()[0])
+	result := httptest.NewRecorder()
+	sessions.RequireSession(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("deleted user reached protected handler")
+	})).ServeHTTP(result, protected)
+	if result.Code != http.StatusUnauthorized {
+		t.Fatalf("deleted user's session returned %d, want 401", result.Code)
+	}
+}
+
 func TestGroupNameRejectsBlankAndCaseInsensitiveDuplicate(t *testing.T) {
 	db := platformTestDB(t)
 	if _, err := db.Exec(`INSERT INTO groups (name) VALUES ('Editors')`); err != nil {
