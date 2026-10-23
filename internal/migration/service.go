@@ -61,6 +61,14 @@ func (s *Service) GetMigration(ctx context.Context, userID contracts.UserID, dbI
 	return store.GetByVersion(ctx, version)
 }
 
+// cek apakah user punya hak buat bikin migration di database target
+func (s *Service) RequireCreateAccess(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID) error {
+	if err := validateIdentity(userID, dbID); err != nil {
+		return err
+	}
+	return s.authorizer.RequireDatabaseAccess(ctx, userID, dbID, contracts.ActionCreateMigration)
+}
+
 // buat draft migration baru (wajib punya akses view + edit)
 func (s *Service) CreateDraft(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, title, sqlText string) (MigrationRecord, error) {
 	if err := validateIdentity(userID, dbID); err != nil {
