@@ -6,15 +6,14 @@ import (
 	"net/http"
 
 	"if3110.local/db-platform/internal/auth"
-	"if3110.local/db-platform/internal/contracts"
 )
 
 type Authenticator interface {
-	Authenticate(ctx context.Context, username, password string) (contracts.UserID, error)
+	AuthenticateForSession(ctx context.Context, username, password string) (auth.LoginProof, error)
 }
 
 type SessionManager interface {
-	Create(w http.ResponseWriter, r *http.Request, userID contracts.UserID) error
+	Create(w http.ResponseWriter, r *http.Request, proof auth.LoginProof) error
 	RequireSession(next http.Handler) http.Handler
 	Logout(w http.ResponseWriter, r *http.Request) error
 }

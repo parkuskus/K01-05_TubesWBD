@@ -49,7 +49,7 @@ type sessionRecord struct {
 }
 
 type sessionStore interface {
-	Create(ctx context.Context, userID contracts.UserID, tokenHash, previousTokenHash []byte, now, expiresAt time.Time, idleTimeout time.Duration) (sessionRecord, error)
+	Create(ctx context.Context, proof LoginProof, tokenHash, previousTokenHash []byte, now, expiresAt time.Time, idleTimeout time.Duration) (sessionRecord, error)
 	LoadAndTouch(ctx context.Context, tokenHash []byte, now time.Time, idleTimeout time.Duration) (sessionRecord, error)
 	Rotate(ctx context.Context, sessionID int64, presentedHash, newHash []byte, now time.Time, idleTimeout, grace time.Duration) (sessionRecord, error)
 	RevokeToken(ctx context.Context, tokenHash []byte, now time.Time) error
@@ -108,9 +108,9 @@ func normalizeSessionConfig(config SessionConfig) (SessionConfig, error) {
 	return config, nil
 }
 
-// Create starts a fresh session after successful authentication and revokes any session in the request cookie.
-func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request, userID contracts.UserID) error {
-	if userID == "" {
+// Create starts a fresh session only if the login proof still matches the account.
+func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request, proof LoginProof) error {
+	if proof.UserID == "" || proof.passwordHash == "" {
 		return ErrUnauthenticated
 	}
 	now := m.now()
@@ -124,7 +124,7 @@ func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request, userID c
 			previousHash = hash[:]
 		}
 	}
-	record, err := m.store.Create(r.Context(), userID, tokenHash[:], previousHash, now, now.Add(m.config.AbsoluteLifetime), m.config.IdleTimeout)
+	record, err := m.store.Create(r.Context(), proof, tokenHash[:], previousHash, now, now.Add(m.config.AbsoluteLifetime), m.config.IdleTimeout)
 	if err != nil {
 		return err
 	}
