@@ -296,3 +296,67 @@ func (p *postgresRepository) setMembership(ctx context.Context, actor, user, gro
 		return err
 	})
 }
+
+func (p *postgresRepository) listGrants(ctx context.Context, actor, group int64) ([]Grant, error) {
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := requireAdmin(ctx, tx, actor); err != nil {
+		return nil, err
+	}
+	var exists int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM groups WHERE id = $1`, group).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT database_id, level FROM group_database_access WHERE group_id = $1 ORDER BY database_id`, group)
+	if err != nil {
+		return nil, err
+	}
+	var grants []Grant
+	for rows.Next() {
+		var database int64
+		var level int64
+		if err := rows.Scan(&database, &level); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if level < int64(contracts.AccessViewOnly) || level > int64(contracts.AccessViewEdit) {
+			rows.Close()
+			return nil, ErrInvalidInput
+		}
+		grants = append(grants, Grant{GroupID: contracts.GroupID(strconv.FormatInt(group, 10)), DatabaseID: contracts.DatabaseID(strconv.FormatInt(database, 10)), Level: contracts.AccessLevel(level)})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return grants, nil
+}
+
+func (p *postgresRepository) setGrant(ctx context.Context, actor, group, database int64, level contracts.AccessLevel) error {
+	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		var exists int64
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM groups WHERE id = $1`, group).Scan(&exists); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if level == contracts.AccessNone {
+			_, err := tx.ExecContext(ctx, `DELETE FROM group_database_access WHERE group_id = $1 AND database_id = $2`, group, database)
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO group_database_access (group_id, database_id, level) VALUES ($1, $2, $3)
+			ON CONFLICT (group_id, database_id) DO UPDATE SET level = EXCLUDED.level`, group, database, level)
+		return err
+	})
+}

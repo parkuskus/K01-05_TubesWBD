@@ -35,14 +35,20 @@ type groupRepository interface {
 	setMembership(context.Context, int64, int64, int64, bool) error
 }
 
+type grantRepository interface {
+	listGrants(context.Context, int64, int64) ([]Grant, error)
+	setGrant(context.Context, int64, int64, int64, contracts.AccessLevel) error
+}
+
 type Service struct {
 	users  userRepository
 	groups groupRepository
+	grants grantRepository
 }
 
 func NewService(db *sql.DB) *Service {
 	repository := &postgresRepository{db: db}
-	return &Service{users: repository, groups: repository}
+	return &Service{users: repository, groups: repository, grants: repository}
 }
 
 func positiveID(id contracts.UserID) (int64, error) {
@@ -221,4 +227,36 @@ func (s *Service) SetMembership(ctx context.Context, actorID, userID contracts.U
 		return err
 	}
 	return s.groups.setMembership(ctx, actor, user, group, member)
+}
+
+func (s *Service) ListGrants(ctx context.Context, actorID contracts.UserID, groupID contracts.GroupID) ([]Grant, error) {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return nil, err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return nil, err
+	}
+	return s.grants.listGrants(ctx, actor, group)
+}
+
+// AccessNone removes a grant instead of storing an access level of zero.
+func (s *Service) SetGrant(ctx context.Context, actorID contracts.UserID, groupID contracts.GroupID, databaseID contracts.DatabaseID, level contracts.AccessLevel) error {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return err
+	}
+	database, err := positiveID(contracts.UserID(databaseID))
+	if err != nil {
+		return err
+	}
+	if level > contracts.AccessViewEdit {
+		return ErrInvalidInput
+	}
+	return s.grants.setGrant(ctx, actor, group, database, level)
 }
