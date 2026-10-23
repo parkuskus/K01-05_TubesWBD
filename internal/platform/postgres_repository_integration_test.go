@@ -347,3 +347,155 @@ func TestGroupMembershipRejectsMissingUserOrGroupAndDuplicatePair(t *testing.T) 
 		t.Fatalf("group deletion removed user: count=%d, error=%v", count, err)
 	}
 }
+
+func TestGroupMembershipForeignKeysAndCascade(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	member, err := s.CreateUser(ctx, admin, "member", "member-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "  Editors  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateGroup(ctx, admin, "editors"); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("duplicate group: %v", err)
+	}
+	if err := s.SetMembership(ctx, member, member, group, true); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("non-admin membership: %v", err)
+	}
+	if err := s.SetMembership(ctx, admin, "999999", group, true); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("missing user: %v", err)
+	}
+	if err := s.SetMembership(ctx, admin, member, "999999", false); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("missing group on removal: %v", err)
+	}
+	if _, err := s.ListMembers(ctx, admin, "999999"); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("missing group on listing: %v", err)
+	}
+	if err := s.SetMembership(ctx, admin, member, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, member, group, true); err != nil {
+		t.Fatalf("duplicate membership should be idempotent: %v", err)
+	}
+	members, err := s.ListMembers(ctx, admin, group)
+	if err != nil || len(members) != 1 || members[0].Username != "member" || members[0].IsPlatformAdmin {
+		t.Fatalf("unexpected members: %v, %v", members, err)
+	}
+	groups, err := s.ListGroups(ctx, admin)
+	if err != nil || len(groups) != 1 || groups[0].Name != "Editors" {
+		t.Fatalf("unexpected groups: %v, %v", groups, err)
+	}
+	if err := s.RenameGroup(ctx, admin, group, " Writers "); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = s.ListGroups(ctx, admin)
+	if err != nil || len(groups) != 1 || groups[0].Name != "Writers" {
+		t.Fatalf("rename did not persist: %v, %v", groups, err)
+	}
+	if err := s.SetMembership(ctx, admin, member, group, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, member, group, false); err != nil {
+		t.Fatalf("repeated removal: %v", err)
+	}
+	members, err = s.ListMembers(ctx, admin, group)
+	if err != nil || len(members) != 0 {
+		t.Fatalf("membership remained: %v, %v", members, err)
+	}
+}
+
+func TestConcurrentMembershipInsertionUnique(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	user, err := s.CreateUser(ctx, admin, "member", "member-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "Editors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for range 2 {
+		go func() { <-start; results <- s.SetMembership(ctx, admin, user, group, true) }()
+	}
+	close(start)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatalf("simultaneous membership: %v", err)
+		}
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM group_memberships`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("membership count=%d, error=%v", count, err)
+	}
+}
+
+func TestGroupDeleteRemovesMembershipOnly(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	user, err := s.CreateUser(ctx, admin, "member", "member-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "Editors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, user, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (user_id, created_at, last_seen_at, absolute_expires_at, rotated_at) VALUES ($1, now(), now(), now() + interval '12 hours', now())`, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteGroup(ctx, admin, group); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteGroup(ctx, admin, group); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("deleted group was still present: %v", err)
+	}
+	var members, users, sessions int
+	if err := db.QueryRow(`SELECT count(*) FROM group_memberships`).Scan(&members); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM users WHERE id::text = $1`, user).Scan(&users); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM sessions WHERE user_id = $1 AND revoked_at IS NULL`, user).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if members != 0 || users != 1 || sessions != 1 {
+		t.Fatalf("group deletion affected unrelated data: members=%d users=%d sessions=%d", members, users, sessions)
+	}
+}
