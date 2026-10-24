@@ -50,7 +50,8 @@ templ usersPage(users []platform.User, token string) {
 						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
 						if user.IsPlatformAdmin {
 							<input type="hidden" name="admin" value="false"/>
-							<small class="platform-danger-note">Mencabut hak admin menghentikan akses kelola pengguna, grup, dan koneksi database.</small>
+							<small class="platform-danger-note">Mencabut hak admin { user.Username } menghentikan aksesnya untuk mengelola pengguna, grup, dan koneksi.</small>
+							<label class="platform-confirm-label"><input type="checkbox" name="confirm" value="true" required/> Saya yakin ingin mencabut hak admin { user.Username }.</label>
 							<button type="submit" class="btn-danger">Cabut admin</button>
 						} else {
 							<input type="hidden" name="admin" value="true"/>
@@ -60,7 +61,8 @@ templ usersPage(users []platform.User, token string) {
 					</form>
 					<form class="platform-form-danger" method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/delete") }>
 						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-						<small class="platform-danger-note">Menghapus akun secara permanen beserta seluruh sesi dan keanggotaan grupnya.</small>
+						<small class="platform-danger-note">Menghapus akun { user.Username } secara permanen beserta seluruh sesi dan keanggotaan grupnya.</small>
+						<label class="platform-confirm-label"><input type="checkbox" name="confirm" value="true" required/> Saya yakin ingin menghapus { user.Username }.</label>
 						<button type="submit" class="btn-danger">Hapus pengguna</button>
 					</form>
 				</div>
@@ -112,7 +114,8 @@ templ groupsPage(groups []platform.Group, token string) {
 					</form>
 					<form class="platform-form-danger" method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/delete") }>
 						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-						<small class="platform-danger-note">Menghapus grup akan mencabut seluruh hak akses database yang diperoleh anggota melalui grup ini.</small>
+						<small class="platform-danger-note">Menghapus grup { group.Name } akan mencabut seluruh hak akses database yang diperoleh anggotanya melalui grup ini.</small>
+						<label class="platform-confirm-label"><input type="checkbox" name="confirm" value="true" required/> Saya yakin ingin menghapus grup { group.Name }.</label>
 						<button type="submit" class="btn-danger">Hapus grup</button>
 					</form>
 				</div>
@@ -162,7 +165,8 @@ templ groupPage(id, name string, members []platform.User, grants []platform.Gran
 							<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
 							<input type="hidden" name="user_id" value={ string(member.ID) }/>
 							<input type="hidden" name="member" value="false"/>
-							<small class="platform-danger-note">Pengguna akan kehilangan akses database dari grup ini.</small>
+							<small class="platform-danger-note">{ member.Username } akan kehilangan akses database yang berasal dari grup { name }.</small>
+							<label class="platform-confirm-label"><input type="checkbox" name="confirm" value="true" required/> Saya yakin ingin menghapus { member.Username } dari grup.</label>
 							<button type="submit" class="btn-danger">Hapus anggota</button>
 						</form>
 					</li>
@@ -195,7 +199,8 @@ templ groupPage(id, name string, members []platform.User, grants []platform.Gran
 							<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
 							<input type="hidden" name="database_id" value={ string(grant.DatabaseID) }/>
 							<input type="hidden" name="level" value="0"/>
-							<small class="platform-danger-note">Mencabut akses grup ini terhadap database tersebut.</small>
+							<small class="platform-danger-note">Anggota grup { name } akan kehilangan akses melalui grup ini ke database ID { string(grant.DatabaseID) }.</small>
+							<label class="platform-confirm-label"><input type="checkbox" name="confirm" value="true" required/> Saya yakin ingin mencabut akses database ID { string(grant.DatabaseID) }.</label>
 							<button type="submit" class="btn-danger">Cabut akses</button>
 						</form>
 					</li>

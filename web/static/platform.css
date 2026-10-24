@@ -260,6 +260,26 @@ main:has(.migration-shell) {
   font-size: 0.84rem;
   line-height: 1.45;
   font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.platform-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--td-text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.platform-confirm-label input[type="checkbox"] {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--td-danger);
 }
 
 .platform-field-note {
@@ -358,7 +378,7 @@ main:has(.migration-shell) {
   color: var(--td-text);
 }
 
-.platform-admin input,
+.platform-admin input:not([type="checkbox"]),
 .platform-admin select,
 .migration-shell input:not([type="checkbox"]),
 .migration-shell select,
@@ -566,7 +586,6 @@ main:has(.migration-shell) {
   padding: 1.25rem 1.35rem;
   background: var(--td-warning-bg);
   border: 1px solid #F0D196;
-  border-left: 4px solid var(--td-warning);
   border-radius: 0.5rem;
   color: var(--td-text);
   display: grid;
@@ -612,7 +631,6 @@ main:has(.migration-shell) {
   padding: 1rem 1.25rem;
   background: var(--td-danger-bg);
   border: 1px solid #F2BFC2;
-  border-left: 4px solid var(--td-danger);
   border-radius: 0.5rem;
   color: var(--td-danger);
   font-weight: 500;

@@ -392,6 +392,7 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 	if resp := adminClient.post("/platform/groups/1/grants", url.Values{
 		"database_id":        {"1"},
 		"level":              {"0"},
+		"confirm":            {"true"},
 		"gorilla.csrf.Token": {revokeToken},
 	}); resp.Code != http.StatusSeeOther {
 		t.Fatalf("revoke grant status=%d", resp.Code)
