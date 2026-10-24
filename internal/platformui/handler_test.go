@@ -211,8 +211,8 @@ func TestAdminUserAndGroupForms(t *testing.T) {
 	if w := adminGet(h, "/platform/users", "1"); w.Code != 200 || !strings.Contains(w.Body.String(), "alice") || strings.Contains(w.Body.String(), "secret-not-rendered") || strings.Count(w.Body.String(), "<main") != 1 {
 		t.Fatalf("users: %d %s", w.Code, w.Body.String())
 	}
-	if w := adminGet(h, "/platform/users", "1"); !strings.Contains(w.Body.String(), `href="/static/platform.css"`) {
-		t.Fatal("admin page lacks module stylesheet")
+	if w := adminGet(h, "/platform/users", "1"); !strings.Contains(w.Body.String(), `href="/static/platform.css"`) || !strings.Contains(w.Body.String(), `href="/databases/connections/"`) || !strings.Contains(w.Body.String(), `class="btn-danger"`) {
+		t.Fatal("admin page lacks module stylesheet, navigation, or destructive action styling")
 	}
 	for _, tc := range []struct {
 		path string

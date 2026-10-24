@@ -29,9 +29,10 @@ func requireUnusedMigrationSchema(ctx context.Context, db *sql.DB) error {
 }
 
 func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
-	dsn := os.Getenv("PLATFORM_TEST_DATABASE_URL")
+	// pakai variabel TARGET_TEST_DATABASE_URL khusus database target uji
+	dsn := os.Getenv("TARGET_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("set PLATFORM_TEST_DATABASE_URL in the process environment to a disposable PostgreSQL database without if3110_platform")
+		t.Skip("set TARGET_TEST_DATABASE_URL in the process environment to a disposable PostgreSQL target database without if3110_platform")
 	}
 
 	adminDB, err := sql.Open("pgx", dsn)
