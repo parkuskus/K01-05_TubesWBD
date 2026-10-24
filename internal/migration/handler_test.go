@@ -337,8 +337,10 @@ func TestHandlerViewEditUserCreateEditAndExecuteFlow(t *testing.T) {
 		t.Fatalf("POST edit draft = %d (Location: %q), want 303", editRec.Code, editRec.Header().Get("Location"))
 	}
 
-	// 3. eksekusi draft versi 1 -> sukses & redirect
-	execRec := sendPostForm(router, "/databases/db-prod/migrations/1/execute", url.Values{}, nil)
+	// 3. eksekusi draft versi 1 dengan konfirmasi tinjauan -> sukses & redirect
+	execRec := sendPostForm(router, "/databases/db-prod/migrations/1/execute", url.Values{
+		"confirm_execute": {"true"},
+	}, nil)
 	if execRec.Code != http.StatusSeeOther || execRec.Header().Get("Location") != "/databases/db-prod/migrations/1" {
 		t.Fatalf("POST execute migration = %d (Location: %q), want 303", execRec.Code, execRec.Header().Get("Location"))
 	}
@@ -354,9 +356,10 @@ func TestHandlerViewEditUserCreateEditAndExecuteFlow(t *testing.T) {
 	badSQL := "INSERT INTO tabel_tidak_ada VALUES (1);"
 	svc.failSQL[badSQL] = errors.New("relation \"tabel_tidak_ada\" does not exist")
 	failRunRec := sendPostForm(router, "/databases/db-prod/migrations", url.Values{
-		"title":    {"migrasi gagal"},
-		"sql_text": {badSQL},
-		"action":   {"run"},
+		"title":           {"migrasi gagal"},
+		"sql_text":        {badSQL},
+		"action":          {"run"},
+		"confirm_execute": {"true"},
 	}, nil)
 	if failRunRec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("POST failed run status = %d, want 422 Unprocessable Entity", failRunRec.Code)
@@ -364,6 +367,49 @@ func TestHandlerViewEditUserCreateEditAndExecuteFlow(t *testing.T) {
 	failBody := failRunRec.Body.String()
 	if !strings.Contains(failBody, "FAILED") || !strings.Contains(failBody, "tabel_tidak_ada") {
 		t.Fatalf("failed run body missing FAILED status or error message: %s", failBody)
+	}
+}
+
+func TestHandlerRejectsExecutionWithoutConfirmation(t *testing.T) {
+	authz := newFakeAuthorizer()
+	editor := contracts.UserID("editor-user")
+	dbID := contracts.DatabaseID("db-prod")
+	authz.setGrant(editor, dbID, contracts.AccessViewEdit)
+
+	svc := newFakeMigrationService(authz)
+	if _, err := svc.CreateDraft(context.Background(), editor, dbID, "buat tabel awal", "CREATE TABLE items (id INT);"); err != nil {
+		t.Fatal(err)
+	}
+
+	currentUser := editor
+	router := setupTestMigrationHandler(t, svc, &currentUser, false)
+
+	// 1. POST execute dari halaman detail tanpa confirm_execute=true -> ditolak 400 Bad Request dan tidak dijalankan
+	execRec := sendPostForm(router, "/databases/db-prod/migrations/1/execute", url.Values{}, nil)
+	if execRec.Code != http.StatusBadRequest {
+		t.Fatalf("POST execute without confirmation status = %d, want 400 Bad Request", execRec.Code)
+	}
+	if !strings.Contains(execRec.Body.String(), "Konfirmasi tinjauan diperlukan sebelum menjalankan migration.") {
+		t.Fatalf("POST execute without confirmation missing warning message: %s", execRec.Body.String())
+	}
+	if svc.records[dbID][0].Status != StatusDraft {
+		t.Fatalf("migration status changed to %s without confirmation, want DRAFT", svc.records[dbID][0].Status)
+	}
+
+	// 2. POST action=run tanpa confirm_execute=true -> ditolak 400 Bad Request dan tidak membuat/menjalankan migration baru
+	runRec := sendPostForm(router, "/databases/db-prod/migrations", url.Values{
+		"title":    {"jalankan tanpa konfirmasi"},
+		"sql_text": {"DROP TABLE items;"},
+		"action":   {"run"},
+	}, nil)
+	if runRec.Code != http.StatusBadRequest {
+		t.Fatalf("POST action=run without confirmation status = %d, want 400 Bad Request", runRec.Code)
+	}
+	if !strings.Contains(runRec.Body.String(), "Konfirmasi tinjauan diperlukan sebelum menjalankan migration.") {
+		t.Fatalf("POST action=run without confirmation missing warning message: %s", runRec.Body.String())
+	}
+	if len(svc.records[dbID]) != 1 {
+		t.Fatalf("records count = %d after unconfirmed run, want 1", len(svc.records[dbID]))
 	}
 }
 
@@ -434,8 +480,8 @@ func TestHandlerUsesSharedLayoutForMigrationPages(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 			body := rec.Body.String()
-			if rec.Code != http.StatusOK || strings.Count(body, "<html") != 1 || strings.Count(body, "<main") != 1 || !strings.Contains(body, `<main><section class="migration-shell">`) || !strings.Contains(body, `href="/static/styles.css"`) {
-				t.Fatalf("page does not use the shared layout: status=%d body=%s", rec.Code, body)
+			if rec.Code != http.StatusOK || strings.Count(body, "<html") != 1 || strings.Count(body, "<main") != 1 || !strings.Contains(body, `<main><section class="migration-shell">`) || !strings.Contains(body, `href="/static/styles.css"`) || !strings.Contains(body, `href="/static/platform.css"`) || !strings.Contains(body, `href="/databases/db-prod/schemas"`) {
+				t.Fatalf("page does not use the shared layout or module navigation: status=%d body=%s", rec.Code, body)
 			}
 		})
 	}
@@ -473,7 +519,12 @@ func TestHandlerFailedSQLDoesNotRenderRawDatabaseError(t *testing.T) {
 	svc.failSQL["SELECT 1"] = errors.New("private-database-diagnostic")
 	user := contracts.UserID("editor")
 	router := setupTestMigrationHandler(t, svc, &user, false)
-	rec := sendPostForm(router, "/databases/db-prod/migrations", url.Values{"title": {"judul"}, "sql_text": {"SELECT 1"}, "action": {"run"}}, nil)
+	rec := sendPostForm(router, "/databases/db-prod/migrations", url.Values{
+		"title":           {"judul"},
+		"sql_text":        {"SELECT 1"},
+		"action":          {"run"},
+		"confirm_execute": {"true"},
+	}, nil)
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "FAILED") || strings.Contains(rec.Body.String(), "private-database-diagnostic") {
 		t.Fatalf("failed migration exposed database error: status=%d body=%s", rec.Code, rec.Body.String())
 	}

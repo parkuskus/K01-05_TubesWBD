@@ -1,69 +1,557 @@
-body:has(.platform-admin) {
+/* token desain teras data untuk modul administrasi platform dan migration */
+:root {
+  --td-bg: #F6F7F5;
+  --td-surface: #FFFFFF;
+  --td-border: #D5DEDA;
+  --td-text: #1D2B29;
+  --td-muted: #485C58;
+  --td-primary: #176B5B;
+  --td-primary-hover: #0F4F43;
+  --td-success: #146B43;
+  --td-success-bg: #E8F5EE;
+  --td-warning: #8A5600;
+  --td-warning-bg: #FFF5E0;
+  --td-danger: #A12D32;
+  --td-danger-bg: #FDECEC;
+  --td-font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  --td-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+body:has(.platform-admin),
+body:has(.migration-shell) {
   display: block;
+  background: var(--td-bg);
+  color: var(--td-text);
+  font-family: var(--td-font-sans);
 }
 
-main:has(.platform-admin) {
+main:has(.platform-admin),
+main:has(.migration-shell) {
   box-sizing: border-box;
+  width: 100%;
   max-width: 76rem;
+  min-width: 0;
   margin: 0 auto;
-  padding: clamp(1rem, 4vw, 3rem);
+  padding: clamp(1rem, 4vw, 2.5rem);
 }
 
-.platform-admin {
+/* tata letak dasar halaman platform & migration */
+.platform-admin,
+.migration-shell {
   display: grid;
   gap: 1.5rem;
-  line-height: 1.5;
+  width: 100%;
+  min-width: 0;
+  line-height: 1.55;
+  color: var(--td-text);
+  overflow-wrap: anywhere;
 }
 
-.platform-admin nav {
-  display: flex;
-  gap: 1rem;
-}
-
-.platform-admin section {
-  padding: 1.25rem 0;
-  border-top: 1px solid #cbd3dc;
-}
-
-.platform-admin h1, .platform-admin h2, .platform-admin p {
+.platform-admin h1,
+.platform-admin h2,
+.platform-admin p,
+.migration-shell h1,
+.migration-shell h2,
+.migration-shell h3,
+.migration-shell p {
   margin: 0;
 }
 
-.platform-admin h1 {
-  font-size: clamp(1.8rem, 3vw, 2.5rem);
+.platform-admin h1,
+.migration-shell h1 {
+  font-size: clamp(1.65rem, 3vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--td-text);
 }
 
-.platform-admin h2 {
-  font-size: 1.2rem;
+.platform-admin h2,
+.migration-shell h2 {
+  font-size: clamp(1.2rem, 2.2vw, 1.45rem);
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--td-text);
+}
+
+.migration-shell h3 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--td-text);
+}
+
+.platform-lead,
+.migration-lead {
+  margin-top: 0.35rem;
+  max-width: 68ch;
+  color: var(--td-muted);
+  font-size: 0.975rem;
+}
+
+.platform-admin a,
+.migration-shell a {
+  color: var(--td-primary);
+  text-underline-offset: 0.2em;
+  font-weight: 500;
+}
+
+.platform-admin a:hover,
+.migration-shell a:hover {
+  color: var(--td-primary-hover);
+  text-decoration-thickness: 2px;
+}
+
+.platform-admin :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+.migration-shell :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--td-primary);
+  outline-offset: 2px;
+}
+
+/* navigasi atas & breadcrumb */
+.platform-nav,
+.migration-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--td-border);
+  font-size: 0.95rem;
+}
+
+.platform-nav a,
+.migration-nav a,
+.platform-breadcrumb a,
+.migration-breadcrumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+.platform-nav a[aria-current="page"],
+.migration-nav a[aria-current="page"] {
+  font-weight: 700;
+  color: var(--td-text);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.platform-breadcrumb,
+.migration-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  color: var(--td-muted);
+  font-size: 0.9rem;
+}
+
+.platform-header,
+.migration-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+/* kartu, section, dan daftar pada platform admin */
+.platform-card,
+.migration-sql-section,
+.migration-edit-section,
+.migration-execute-section {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  background: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.platform-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.platform-meta {
+  color: var(--td-muted);
+  font-size: 0.9rem;
+  font-family: var(--td-font-mono);
+}
+
+.platform-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+  align-items: start;
 }
 
 .platform-admin form {
-  display: inline-grid;
-  gap: .5rem;
-  align-items: end;
-  margin: .75rem 1rem .75rem 0;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  margin: 0;
+  min-width: 0;
 }
 
-.platform-admin input, .platform-admin select, .platform-admin button {
-  min-height: 2.75rem;
+.platform-form-danger {
+  padding: 0.85rem;
+  border: 1px solid #EBC6C8;
+  border-radius: 0.375rem;
+  background: #FFFDFD;
+}
+
+.platform-danger-note {
+  color: var(--td-danger);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.platform-field-note {
+  color: var(--td-muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.platform-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.platform-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--td-border);
+}
+
+.platform-item-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* badge peran & status */
+.platform-badge,
+.migration-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.35rem;
+  font-size: 0.825rem;
+  font-weight: 650;
+  font-family: var(--td-font-mono);
+  line-height: 1.3;
+  border: 1px solid transparent;
+}
+
+.platform-badge-admin,
+.platform-badge-edit,
+.migration-status-applied {
+  color: var(--td-success);
+  background: var(--td-success-bg);
+  border-color: #B7DFC9;
+}
+
+.platform-badge-user,
+.platform-badge-view {
+  color: var(--td-muted);
+  background: var(--td-bg);
+  border-color: var(--td-border);
+}
+
+.migration-status-draft {
+  color: var(--td-warning);
+  background: var(--td-warning-bg);
+  border-color: #EBD29B;
+}
+
+.migration-status-failed {
+  color: var(--td-danger);
+  background: var(--td-danger-bg);
+  border-color: #EBC6C8;
+}
+
+/* form input, textarea, select, dan tombol */
+.platform-admin .form-field,
+.migration-field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--td-text);
+}
+
+.platform-admin input,
+.platform-admin select,
+.migration-shell input:not([type="checkbox"]),
+.migration-shell select,
+.migration-shell textarea {
   box-sizing: border-box;
-  padding: .5rem .75rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #9FB0AA;
+  border-radius: 0.35rem;
+  background: var(--td-surface);
+  color: var(--td-text);
   font: inherit;
+  font-weight: 400;
 }
 
-.platform-admin button {
-  border: 0;
-  border-radius: .25rem;
-  background: #20242b;
-  color: white;
+.migration-shell textarea[name="sql_text"] {
+  font-family: var(--td-font-mono);
+  font-size: 0.925rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.platform-admin button,
+.migration-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  background: var(--td-primary);
+  color: #FFFFFF;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
 }
 
-.platform-admin button:hover { background: #394352; }
-.platform-admin :is(a, button, input, select):focus-visible { outline: 3px solid #234a7d; outline-offset: 2px; }
-.platform-admin li { margin-block: .75rem; }
-.platform-admin a { color: #234a7d; text-underline-offset: .2em; }
+.platform-admin button:hover,
+.migration-btn:hover,
+.migration-btn-primary:hover {
+  background: var(--td-primary-hover);
+  color: #FFFFFF;
+}
+
+.migration-btn-secondary {
+  background: var(--td-surface);
+  color: var(--td-text);
+  border-color: var(--td-border);
+}
+
+.migration-btn-secondary:hover {
+  background: var(--td-bg);
+  color: var(--td-text);
+}
+
+.platform-admin .btn-danger {
+  background: var(--td-danger);
+  color: #FFFFFF;
+}
+
+.platform-admin .btn-danger:hover {
+  background: #7E2024;
+  color: #FFFFFF;
+}
+
+.migration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* tabel riwayat migration & pembungkus scroll horizontal */
+.migration-scroll {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--td-border);
+  border-radius: 0.5rem;
+  background: var(--td-surface);
+}
+
+.migration-history-table {
+  width: 100%;
+  min-width: 38rem;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.migration-history-table caption {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--td-muted);
+  background: var(--td-bg);
+  border-bottom: 1px solid var(--td-border);
+}
+
+.migration-history-table th,
+.migration-history-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--td-border);
+  vertical-align: top;
+}
+
+.migration-history-table thead {
+  background: var(--td-bg);
+  color: var(--td-text);
+  font-weight: 650;
+}
+
+.migration-history-table td:first-child {
+  font-family: var(--td-font-mono);
+  font-weight: 600;
+}
+
+/* editor form, metadata detail, sql preview, dan kotak peringatan */
+.migration-editor-form {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  background: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 1.15rem;
+}
+
+.migration-meta {
+  box-sizing: border-box;
+  width: 100%;
+  padding: clamp(1rem, 2.5vw, 1.35rem);
+  background: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.migration-sql-preview {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  background: var(--td-bg);
+  border: 1px solid var(--td-border);
+  border-radius: 0.375rem;
+  color: var(--td-text);
+  font-family: var(--td-font-mono);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.migration-warning {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1rem 1.15rem;
+  background: var(--td-warning-bg);
+  border: 1px solid #EBD29B;
+  border-left: 4px solid var(--td-warning);
+  border-radius: 0.375rem;
+  color: var(--td-text);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.migration-warning h3 {
+  color: var(--td-warning);
+}
+
+.migration-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.5rem 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.migration-confirm-label input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+  accent-color: var(--td-primary);
+}
+
+/* pesan status kosong dan error */
+.platform-empty,
+.migration-empty {
+  padding: 1.25rem;
+  background: var(--td-surface);
+  border: 1px dashed var(--td-border);
+  border-radius: 0.5rem;
+  color: var(--td-muted);
+}
+
+.migration-error,
+.migration-error-box {
+  padding: 0.9rem 1.1rem;
+  background: var(--td-danger-bg);
+  border: 1px solid #EBC6C8;
+  border-left: 4px solid var(--td-danger);
+  border-radius: 0.375rem;
+  color: var(--td-danger);
+}
+
+/* responsif untuk layar tablet dan ponsel hingga 320px */
+@media (max-width: 60rem) {
+  .platform-header,
+  .migration-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .platform-actions {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 42rem) {
-  .platform-admin form { display: grid; margin-right: 0; }
+  main:has(.platform-admin),
+  main:has(.migration-shell) {
+    padding: 0.85rem;
+  }
+
+  .platform-admin form,
+  .migration-actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .platform-admin button,
+  .migration-btn {
+    width: 100%;
+  }
+
+  .platform-list-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .migration-history-table th,
+  .migration-history-table td {
+    padding: 0.55rem 0.65rem;
+  }
 }

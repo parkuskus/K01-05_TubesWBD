@@ -2,144 +2,213 @@ package platformui
 
 import "if3110.local/db-platform/internal/platform"
 
+// komponen tampilan halaman administrasi platform
 templ usersPage(users []platform.User, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
-		<nav aria-label="Administrasi"><a href="/platform/users">Pengguna</a> · <a href="/platform/groups">Grup</a></nav>
-		<h1>Pengguna platform</h1>
+		<nav class="platform-nav" aria-label="Administrasi">
+			<a href="/">Beranda</a> ·
+			<a href="/databases/">Database</a> ·
+			<a href="/platform/users" aria-current="page">Pengguna</a> ·
+			<a href="/platform/groups">Grup &amp; Akses</a> ·
+			<a href="/databases/connections/">Koneksi Database</a>
+		</nav>
+		<header class="platform-header">
+			<h1>Pengguna platform</h1>
+			<p class="platform-lead">Platform Admin mengelola akun dan keanggotaan grup, namun tidak otomatis memiliki akses ke isi database target kecuali tergabung dalam grup yang diberi izin.</p>
+		</header>
 		if len(users) == 0 {
-			<p>Belum ada pengguna.</p>
+			<div class="platform-empty">
+				<p>Belum ada pengguna terdaftar. Gunakan formulir di bawah untuk menambahkan akun baru.</p>
+			</div>
 		}
 		for _, user := range users {
-			<section aria-label={ "Pengguna " + user.Username }>
-				<h2>{ user.Username }</h2>
-				<p>ID { string(user.ID) } ·
-					if user.IsPlatformAdmin {
-						Administrator
-					} else {
-						Pengguna biasa
-					}
-				</p>
-				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/username") }>
-					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-					<label class="form-field">Nama pengguna <input name="username" value={ user.Username } required/></label>
-					<button type="submit">Ubah nama</button>
-				</form>
-				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/password") }>
-					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-					<label class="form-field">Kata sandi baru <input type="password" name="password" autocomplete="new-password" required/></label>
-					<button type="submit">Ganti kata sandi</button>
-				</form>
-				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/admin") }>
-					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-					if user.IsPlatformAdmin {
-						<input type="hidden" name="admin" value="false"/><button type="submit">Cabut admin</button>
-					} else {
-						<input type="hidden" name="admin" value="true"/><button type="submit">Jadikan admin</button>
-					}
-				</form>
-				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/delete") }>
-					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-					<button type="submit">Hapus pengguna</button>
-				</form>
+			<section class="platform-card" aria-label={ "Pengguna " + user.Username }>
+				<div class="platform-card-header">
+					<h2>{ user.Username }</h2>
+					<p class="platform-meta">
+						<span>ID { string(user.ID) }</span> ·
+						if user.IsPlatformAdmin {
+							<span class="platform-badge platform-badge-admin">Administrator</span>
+						} else {
+							<span class="platform-badge platform-badge-user">Pengguna biasa</span>
+						}
+					</p>
+				</div>
+				<div class="platform-actions">
+					<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/username") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<label class="form-field">Nama pengguna <input name="username" value={ user.Username } required/></label>
+						<button type="submit">Ubah nama</button>
+					</form>
+					<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/password") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<label class="form-field">Kata sandi baru <input type="password" name="password" autocomplete="new-password" required/></label>
+						<button type="submit">Ganti kata sandi</button>
+					</form>
+					<form class="platform-form-danger" method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/admin") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						if user.IsPlatformAdmin {
+							<input type="hidden" name="admin" value="false"/>
+							<small class="platform-danger-note">Mencabut hak admin menghentikan akses kelola pengguna, grup, dan koneksi database.</small>
+							<button type="submit" class="btn-danger">Cabut admin</button>
+						} else {
+							<input type="hidden" name="admin" value="true"/>
+							<small class="platform-field-note">Memberikan hak kelola pengguna, grup, dan koneksi database platform.</small>
+							<button type="submit">Jadikan admin</button>
+						}
+					</form>
+					<form class="platform-form-danger" method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/delete") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<small class="platform-danger-note">Menghapus akun secara permanen beserta seluruh sesi dan keanggotaan grupnya.</small>
+						<button type="submit" class="btn-danger">Hapus pengguna</button>
+					</form>
+				</div>
 			</section>
 		}
-		<h2>Tambah pengguna</h2>
-		<form method="post" action="/platform/users">
-			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-			<label class="form-field">Nama pengguna <input name="username" required/></label>
-			<label class="form-field">Kata sandi <input type="password" name="password" autocomplete="new-password" required/></label>
-			<button type="submit">Tambah pengguna</button>
-		</form>
+		<section class="platform-card">
+			<h2>Tambah pengguna</h2>
+			<p class="platform-field-note">Akun baru dibuat sebagai pengguna biasa. Tambahkan ke grup untuk memberikan akses database.</p>
+			<form method="post" action="/platform/users">
+				<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+				<label class="form-field">Nama pengguna <input name="username" required/></label>
+				<label class="form-field">Kata sandi <input type="password" name="password" autocomplete="new-password" required/></label>
+				<button type="submit">Tambah pengguna</button>
+			</form>
+		</section>
 	</section>
 }
 
 templ groupsPage(groups []platform.Group, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
-		<nav aria-label="Administrasi"><a href="/platform/users">Pengguna</a> · <a href="/platform/groups">Grup</a></nav>
-		<h1>Grup platform</h1>
+		<nav class="platform-nav" aria-label="Administrasi">
+			<a href="/">Beranda</a> ·
+			<a href="/databases/">Database</a> ·
+			<a href="/platform/users">Pengguna</a> ·
+			<a href="/platform/groups" aria-current="page">Grup &amp; Akses</a> ·
+			<a href="/databases/connections/">Koneksi Database</a>
+		</nav>
+		<header class="platform-header">
+			<h1>Grup platform</h1>
+			<p class="platform-lead">Akses ke database target diberikan melalui grup dengan tingkat izin View Only (lihat schema &amp; riwayat) atau View + Edit (buat &amp; jalankan migration).</p>
+		</header>
 		if len(groups) == 0 {
-			<p>Belum ada grup.</p>
+			<div class="platform-empty">
+				<p>Belum ada grup. Buat grup terlebih dahulu untuk mengatur anggota dan hak akses database.</p>
+			</div>
 		}
 		for _, group := range groups {
-			<section aria-label={ "Grup " + group.Name }>
-				<h2><a href={ templ.URL("/platform/groups/" + string(group.ID)) }>{ group.Name }</a></h2>
-				<form method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/name") }>
-					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-					<label class="form-field">Nama grup <input name="name" value={ group.Name } required/></label>
-					<button type="submit">Ubah nama</button>
-				</form>
-				<form method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/delete") }>
-					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-					<button type="submit">Hapus grup</button>
-				</form>
+			<section class="platform-card" aria-label={ "Grup " + group.Name }>
+				<div class="platform-card-header">
+					<h2><a href={ templ.URL("/platform/groups/" + string(group.ID)) }>{ group.Name }</a></h2>
+					<p class="platform-meta">ID Grup { string(group.ID) } · <a href={ templ.URL("/platform/groups/" + string(group.ID)) }>Kelola anggota &amp; akses database</a></p>
+				</div>
+				<div class="platform-actions">
+					<form method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/name") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<label class="form-field">Nama grup <input name="name" value={ group.Name } required/></label>
+						<button type="submit">Ubah nama</button>
+					</form>
+					<form class="platform-form-danger" method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/delete") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<small class="platform-danger-note">Menghapus grup akan mencabut seluruh hak akses database yang diperoleh anggota melalui grup ini.</small>
+						<button type="submit" class="btn-danger">Hapus grup</button>
+					</form>
+				</div>
 			</section>
 		}
-		<h2>Tambah grup</h2>
-		<form method="post" action="/platform/groups">
-			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-			<label class="form-field">Nama grup <input name="name" required/></label>
-			<button type="submit">Tambah grup</button>
-		</form>
+		<section class="platform-card">
+			<h2>Tambah grup</h2>
+			<p class="platform-field-note">Setelah grup dibuat, pilih nama grup untuk menambahkan anggota dan mengatur tingkat akses database.</p>
+			<form method="post" action="/platform/groups">
+				<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+				<label class="form-field">Nama grup <input name="name" required/></label>
+				<button type="submit">Tambah grup</button>
+			</form>
+		</section>
 	</section>
 }
 
 templ groupPage(id, name string, members []platform.User, grants []platform.Grant, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
-		<nav aria-label="Administrasi"><a href="/platform/groups">Kembali ke grup</a></nav>
-		<h1>{ name }</h1>
-		<h2>Anggota</h2>
-		if len(members) == 0 {
-			<p>Belum ada anggota.</p>
-		}
-		<ul>
-			for _, member := range members {
-				<li>{ member.Username } (ID { string(member.ID) })
-					<form method="post" action={ templ.URL("/platform/groups/" + id + "/members") }>
-						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-						<input type="hidden" name="user_id" value={ string(member.ID) }/>
-						<input type="hidden" name="member" value="false"/>
-						<button type="submit">Hapus anggota</button>
-					</form>
-				</li>
+		<nav class="platform-nav" aria-label="Administrasi">
+			<a href="/">Beranda</a> ·
+			<a href="/databases/">Database</a> ·
+			<a href="/platform/users">Pengguna</a> ·
+			<a href="/platform/groups">Grup &amp; Akses</a> ·
+			<a href="/databases/connections/">Koneksi Database</a>
+		</nav>
+		<nav class="platform-breadcrumb" aria-label="Breadcrumb">
+			<a href="/platform/groups">Kembali ke grup</a> / <span>{ name }</span>
+		</nav>
+		<header class="platform-header">
+			<h1>{ name }</h1>
+			<p class="platform-lead">Atur pengguna yang tergabung dalam grup ini serta tetapkan tingkat akses ke setiap database target (View Only atau View + Edit).</p>
+		</header>
+		<section class="platform-card">
+			<h2>Anggota</h2>
+			if len(members) == 0 {
+				<p class="platform-empty">Belum ada anggota di grup ini. Tambahkan pengguna berdasarkan ID pengguna di bawah.</p>
 			}
-		</ul>
-		<form method="post" action={ templ.URL("/platform/groups/" + id + "/members") }>
-			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-			<input type="hidden" name="member" value="true"/>
-			<label class="form-field">ID pengguna <input name="user_id" inputmode="numeric" required/></label>
-			<button type="submit">Tambah anggota</button>
-		</form>
-		<h2>Akses database</h2>
-		if len(grants) == 0 {
-			<p>Belum ada akses database.</p>
-		}
-		<ul>
-			for _, grant := range grants {
-				<li>Database ID { string(grant.DatabaseID) } ·
-					if grant.Level == 2 {
-						View + Edit
-					} else {
-						View Only
-					}
-					<form method="post" action={ templ.URL("/platform/groups/" + id + "/grants") }>
-						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-						<input type="hidden" name="database_id" value={ string(grant.DatabaseID) }/>
-						<input type="hidden" name="level" value="0"/>
-						<button type="submit">Cabut akses</button>
-					</form>
-				</li>
+			<ul class="platform-list">
+				for _, member := range members {
+					<li class="platform-list-item">
+						<div class="platform-item-info">
+							<strong>{ member.Username }</strong> <span class="platform-meta">(ID { string(member.ID) })</span>
+						</div>
+						<form class="platform-form-danger" method="post" action={ templ.URL("/platform/groups/" + id + "/members") }>
+							<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+							<input type="hidden" name="user_id" value={ string(member.ID) }/>
+							<input type="hidden" name="member" value="false"/>
+							<small class="platform-danger-note">Pengguna akan kehilangan akses database dari grup ini.</small>
+							<button type="submit" class="btn-danger">Hapus anggota</button>
+						</form>
+					</li>
+				}
+			</ul>
+			<form method="post" action={ templ.URL("/platform/groups/" + id + "/members") }>
+				<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+				<input type="hidden" name="member" value="true"/>
+				<label class="form-field">ID pengguna <input name="user_id" inputmode="numeric" required/></label>
+				<button type="submit">Tambah anggota</button>
+			</form>
+		</section>
+		<section class="platform-card">
+			<h2>Akses database</h2>
+			if len(grants) == 0 {
+				<p class="platform-empty">Belum ada akses database untuk grup ini. Pilih ID koneksi database dan tingkat akses di bawah.</p>
 			}
-		</ul>
-		<form method="post" action={ templ.URL("/platform/groups/" + id + "/grants") }>
-			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-			<label class="form-field">ID koneksi database <input name="database_id" inputmode="numeric" required/></label>
-			<label>Tingkat akses
-				<select name="level"><option value="1">View Only</option><option value="2">View + Edit</option></select>
-			</label>
-			<button type="submit">Simpan akses</button>
-		</form>
+			<ul class="platform-list">
+				for _, grant := range grants {
+					<li class="platform-list-item">
+						<div class="platform-item-info">
+							<span>Database ID { string(grant.DatabaseID) }</span> ·
+							if grant.Level == 2 {
+								<span class="platform-badge platform-badge-edit">View + Edit</span>
+							} else {
+								<span class="platform-badge platform-badge-view">View Only</span>
+							}
+						</div>
+						<form class="platform-form-danger" method="post" action={ templ.URL("/platform/groups/" + id + "/grants") }>
+							<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+							<input type="hidden" name="database_id" value={ string(grant.DatabaseID) }/>
+							<input type="hidden" name="level" value="0"/>
+							<small class="platform-danger-note">Mencabut akses grup ini terhadap database tersebut.</small>
+							<button type="submit" class="btn-danger">Cabut akses</button>
+						</form>
+					</li>
+				}
+			</ul>
+			<form method="post" action={ templ.URL("/platform/groups/" + id + "/grants") }>
+				<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+				<label class="form-field">ID koneksi database <input name="database_id" inputmode="numeric" required/></label>
+				<label class="form-field">Tingkat akses
+					<select name="level"><option value="1">View Only</option><option value="2">View + Edit</option></select>
+				</label>
+				<button type="submit">Simpan akses</button>
+			</form>
+		</section>
 	</section>
 }
