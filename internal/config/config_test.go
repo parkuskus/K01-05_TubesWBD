@@ -7,11 +7,13 @@ import (
 	"testing"
 )
 
-func TestParseConfigRequiresPlatformDatabaseAndCSRFKey(t *testing.T) {
-	validKey := strings.Repeat("ab", 32)
+func TestParseConfigRequiresPlatformDatabaseCSRFAndCredentialKeys(t *testing.T) {
+	validCSRFKey := strings.Repeat("ab", 32)
+	validCredKey := strings.Repeat("cd", 32)
 	for _, env := range []map[string]string{
-		{"CSRF_AUTH_KEY": validKey},
-		{"PLATFORM_DATABASE_URL": "postgres://localhost/platform_dev"},
+		{"CSRF_AUTH_KEY": validCSRFKey, "DATABASE_CREDENTIAL_KEY": validCredKey},
+		{"PLATFORM_DATABASE_URL": "postgres://localhost/platform_dev", "DATABASE_CREDENTIAL_KEY": validCredKey},
+		{"PLATFORM_DATABASE_URL": "postgres://localhost/platform_dev", "CSRF_AUTH_KEY": validCSRFKey},
 	} {
 		if _, err := parseConfig(func(key string) (string, bool) {
 			value, ok := env[key]
@@ -22,12 +24,14 @@ func TestParseConfigRequiresPlatformDatabaseAndCSRFKey(t *testing.T) {
 	}
 }
 
-func TestParseConfigValidatesCSRFKeyAndCookieFlag(t *testing.T) {
-	validKey := strings.Repeat("ab", 32)
+func TestParseConfigValidatesCSRFKeyCredentialKeyAndCookieFlag(t *testing.T) {
+	validCSRFKey := strings.Repeat("ab", 32)
+	validCredKey := strings.Repeat("cd", 32)
 	base := map[string]string{
-		"PLATFORM_DATABASE_URL": "postgres://localhost/platform_dev",
-		"CSRF_AUTH_KEY":         validKey,
-		"SECURE_COOKIES":        "true",
+		"PLATFORM_DATABASE_URL":   "postgres://localhost/platform_dev",
+		"CSRF_AUTH_KEY":           validCSRFKey,
+		"DATABASE_CREDENTIAL_KEY": validCredKey,
+		"SECURE_COOKIES":          "true",
 	}
 	config, err := parseConfig(func(key string) (string, bool) {
 		value, ok := base[key]
@@ -36,7 +40,7 @@ func TestParseConfigValidatesCSRFKeyAndCookieFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(config.CSRFKey) != 32 || config.Port != "8080" || config.Environment != "development" || !config.SecureCookies {
+	if len(config.CSRFKey) != 32 || len(config.DatabaseCredentialKey) != 32 || config.Port != "8080" || config.Environment != "development" || !config.SecureCookies {
 		t.Fatalf("parsed config has unexpected defaults/settings: %+v", config)
 	}
 
@@ -47,7 +51,18 @@ func TestParseConfigValidatesCSRFKeyAndCookieFlag(t *testing.T) {
 	}); err == nil {
 		t.Fatal("invalid CSRF key encoding was accepted")
 	}
-	base["CSRF_AUTH_KEY"] = validKey
+	base["CSRF_AUTH_KEY"] = validCSRFKey
+
+	for _, badCredKey := range []string{"", "not-hex", strings.Repeat("cd", 31), validCSRFKey} {
+		base["DATABASE_CREDENTIAL_KEY"] = badCredKey
+		if _, err := parseConfig(func(key string) (string, bool) {
+			value, ok := base[key]
+			return value, ok
+		}); err == nil {
+			t.Fatalf("invalid DATABASE_CREDENTIAL_KEY %q was accepted", badCredKey)
+		}
+	}
+	base["DATABASE_CREDENTIAL_KEY"] = validCredKey
 	base["SECURE_COOKIES"] = "sometimes"
 	if _, err := parseConfig(func(key string) (string, bool) {
 		value, ok := base[key]
@@ -67,10 +82,11 @@ func TestParseConfigValidatesCSRFKeyAndCookieFlag(t *testing.T) {
 
 func TestParseConfigPreservesBootstrapPasswordWhitespace(t *testing.T) {
 	env := map[string]string{
-		"PLATFORM_DATABASE_URL":  "postgres://localhost/platform_dev",
-		"CSRF_AUTH_KEY":          strings.Repeat("ab", 32),
-		"INITIAL_ADMIN_USERNAME": "admin",
-		"INITIAL_ADMIN_PASSWORD": " leading and trailing ",
+		"PLATFORM_DATABASE_URL":   "postgres://localhost/platform_dev",
+		"CSRF_AUTH_KEY":           strings.Repeat("ab", 32),
+		"DATABASE_CREDENTIAL_KEY": strings.Repeat("cd", 32),
+		"INITIAL_ADMIN_USERNAME":  "admin",
+		"INITIAL_ADMIN_PASSWORD":  " leading and trailing ",
 	}
 	config, err := parseConfig(func(key string) (string, bool) {
 		value, ok := env[key]
