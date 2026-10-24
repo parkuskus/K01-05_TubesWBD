@@ -1,7 +1,24 @@
+body:has(main > .db-module) {
+    display: block;
+}
+main:has(> .db-module) {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 80rem;
+    min-width: 0;
+    margin: 0 auto;
+    padding: clamp(1rem, 4vw, 3rem);
+}
+
 .db-module {
     width: 100%;
     min-width: 0;
     line-height: 1.5;
+    overflow-wrap: anywhere;
+    --db-accent: var(--color-primary, #234a7d);
+    --db-border: var(--color-border, #d8dde4);
+    --db-muted: var(--color-text-muted, #485568);
+    --db-surface: var(--color-surface, #fff);
 }
 
 .db-module h1 {
@@ -14,7 +31,7 @@
 }
 
 .db-module a {
-    color: #234a7d;
+    color: var(--db-accent);
     text-underline-offset: .2em;
 }
 
@@ -27,7 +44,7 @@
 
 .db-nav {
     padding-bottom: 1rem;
-    border-bottom: 1px solid #d8dde4;
+    border-bottom: 1px solid var(--db-border);
 }
 
 .db-actions {
@@ -39,7 +56,10 @@
 }
 
 .db-module .db-button, .db-module button {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 44px;
     padding: .65rem 1rem;
     border-radius: .3rem;
     background: #20242b;
@@ -72,20 +92,22 @@
 .db-form input, .db-form select {
     box-sizing: border-box;
     width: 100%;
+    min-width: 0;
+    min-height: 44px;
     padding: .65rem;
     border: 1px solid #8c96a5;
     border-radius: .25rem;
-    background: white;
+    background: var(--db-surface);
     color: #20242b;
     font: inherit;
 }
 
 .db-form small, .db-list small {
-    color: #5c6675;
+    color: var(--db-muted);
 }
 
 .db-module :focus-visible {
-    outline: 3px solid #234a7d;
+    outline: 3px solid var(--db-accent);
     outline-offset: 3px;
 }
 
@@ -93,13 +115,14 @@
     max-width: 100%;
     overflow-x: auto;
     margin: 1.5rem 0;
-    border: 1px solid #d8dde4;
+    border: 1px solid var(--db-border);
     border-radius: .3rem;
-    background: white;
+    background: var(--db-surface);
 }
 
 .db-module table {
     width: 100%;
+    min-width: 40rem;
     border-collapse: collapse;
     text-align: left;
 }
@@ -131,12 +154,12 @@
 }
 
 .db-null {
-    color: #5c6675;
+    color: var(--db-muted);
 }
 
 .db-empty {
     padding: 1rem 0;
-    color: #5c6675;
+    color: var(--db-muted);
 }
 
 .db-alert, .db-notice {
@@ -165,7 +188,7 @@
     justify-content: space-between;
     gap: 1rem;
     padding: .8rem 0;
-    border-bottom: 1px solid #d8dde4;
+    border-bottom: 1px solid var(--db-border);
 }
 
 .db-definitions dt {
@@ -186,3 +209,39 @@
         padding: .5rem;
     }
 }
+
+.db-nav a, .db-actions a, .db-list a, .db-breadcrumb a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+}
+.db-nav a:hover, .db-actions a:hover, .db-list a:hover {
+    text-decoration-thickness: 2px;
+}
+.db-breadcrumb, .db-context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+    margin-top: 1rem;
+}
+.db-context { justify-content: space-between; }
+.db-context .db-actions { margin: 0; }
+.db-badge {
+    display: inline-block;
+    border: 1px solid var(--db-border);
+    border-radius: .4rem;
+    padding: .25rem .6rem;
+    font-size: .875rem;
+    color: var(--db-muted);
+    background: var(--db-surface);
+}
+.db-connection-id { display: block; font-weight: normal; color: var(--db-muted); }
+.db-form .db-field-error { color: #8e1b1b; }
+.db-field-error:empty { display: none; }
+.db-form [aria-invalid="true"] { border: 2px solid #8e1b1b; }
+.db-form > *, .db-list li > * { min-width: 0; }
+.db-module code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.db-module h1 { font-size: clamp(1.8rem, 4vw, 2.25rem); }
+.db-scroll { width: 100%; box-sizing: border-box; }
+.db-module th { overflow-wrap: anywhere; }

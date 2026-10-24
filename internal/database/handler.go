@@ -28,6 +28,36 @@ type handlers struct {
 	currentUser func(*http.Request) (contracts.UserID, bool)
 }
 
+type pageNavigation struct {
+	Admin    bool
+	Database DatabaseChoice
+	Schema   string
+	Table    string
+	View     string
+}
+
+func (h *handlers) isAdmin(ctx context.Context, actor contracts.UserID) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	err := h.manager.requireAdmin(ctx, actor)
+	if errors.Is(err, contracts.ErrForbidden) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (h *handlers) navigation(r *http.Request, actor contracts.UserID, action contracts.DatabaseAction, view string) (pageNavigation, error) {
+	choice, err := h.manager.describe(r.Context(), actor, contracts.DatabaseID(r.PathValue("id")), action)
+	if err != nil {
+		return pageNavigation{}, err
+	}
+	admin, err := h.isAdmin(r.Context(), actor)
+	if err != nil {
+		return pageNavigation{}, err
+	}
+	return pageNavigation{Admin: admin, Database: choice, Schema: r.URL.Query().Get("schema"), Table: r.URL.Query().Get("table"), View: view}, nil
+}
+
 // NewHandler returns routes under /databases/. Mount without StripPrefix, inside
 // the central session and CSRF middleware. layout is supplied by internal/ui's
 // owner; this module only renders page content and never imports internal/web.
@@ -65,7 +95,7 @@ func (h *handlers) withUser(next func(http.ResponseWriter, *http.Request, contra
 		w.Header().Set("Cache-Control", "no-store")
 		actor, ok := h.currentUser(r)
 		if !ok || actor == "" {
-			http.Error(w, "Silakan login terlebih dahulu.", http.StatusUnauthorized)
+			h.fail(w, r, auth.ErrUnauthenticated)
 			return
 		}
 		// Fail closed if the integrator forgets the central CSRF middleware.
@@ -90,6 +120,8 @@ func (h *handlers) render(w http.ResponseWriter, r *http.Request, status int, ti
 
 func errorResponse(err error) (int, string) {
 	switch {
+	case errors.Is(err, auth.ErrUnauthenticated):
+		return http.StatusUnauthorized, "Sesi Anda berakhir atau belum masuk. Silakan login kembali."
 	case errors.Is(err, contracts.ErrForbidden):
 		return http.StatusForbidden, "Anda tidak memiliki akses untuk tindakan ini."
 	case errors.Is(err, ErrInvalidInput):
@@ -106,7 +138,7 @@ func errorResponse(err error) (int, string) {
 }
 func (h *handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := errorResponse(err)
-	h.render(w, r, status, "Permintaan gagal", messagePage(message))
+	h.render(w, r, status, "Permintaan gagal", messagePage(message, status == http.StatusUnauthorized))
 }
 
 func (h *handlers) connectionList(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
@@ -132,7 +164,7 @@ func (h *handlers) newConnection(w http.ResponseWriter, r *http.Request, actor c
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Tambah koneksi", connectionForm("", Connection{Port: 5432, SSLMode: "disable"}, auth.CSRFToken(r), ""))
+	h.render(w, r, 200, "Tambah koneksi", connectionForm("", Connection{Port: 5432, SSLMode: "disable"}, auth.CSRFToken(r), "", nil))
 }
 func (h *handlers) editConnection(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
 	c, err := h.manager.Get(r.Context(), actor, contracts.DatabaseID(r.PathValue("id")))
@@ -140,7 +172,7 @@ func (h *handlers) editConnection(w http.ResponseWriter, r *http.Request, actor 
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Edit koneksi", connectionForm(c.ID, c, auth.CSRFToken(r), ""))
+	h.render(w, r, 200, "Edit koneksi", connectionForm(c.ID, c, auth.CSRFToken(r), "", nil))
 }
 
 func parseConnectionForm(w http.ResponseWriter, r *http.Request, edit bool) (ConnectionInput, error) {
@@ -190,8 +222,16 @@ func (h *handlers) save(w http.ResponseWriter, r *http.Request, actor contracts.
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrConflict) {
 			status, message := errorResponse(err)
+			_, fields := in.validateFields(!edit)
+			if errors.Is(err, ErrConflict) {
+				fields["name"] = "Nama koneksi sudah digunakan. Pilih nama lain."
+			}
 			c := Connection{Name: in.Name, Host: in.Host, Port: in.Port, Database: in.Database, Username: in.Username, SSLMode: in.SSLMode}
-			h.render(w, r, status, "Simpan koneksi", connectionForm(id, c, auth.CSRFToken(r), message))
+			if fields["host"] != "" {
+				// A pasted DSN can contain a password; never echo invalid host input.
+				c.Host = ""
+			}
+			h.render(w, r, status, "Simpan koneksi", connectionForm(id, c, auth.CSRFToken(r), message, fields))
 			return
 		}
 		h.fail(w, r, err)
@@ -230,18 +270,33 @@ func (h *handlers) databaseList(w http.ResponseWriter, r *http.Request, actor co
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Database", databasesPage(items))
+	admin, err := h.isAdmin(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, 200, "Database", databasesPage(items, admin))
 }
 func (h *handlers) schemas(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	nav, err := h.navigation(r, actor, contracts.ActionViewSchema, "schemas")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	id := contracts.DatabaseID(r.PathValue("id"))
 	items, err := h.viewer.Schemas(r.Context(), actor, id)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Schema", schemasPage(id, items))
+	h.render(w, r, 200, "Schema · "+nav.Database.Name, schemasPage(nav, items))
 }
 func (h *handlers) tables(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	nav, err := h.navigation(r, actor, contracts.ActionViewSchema, "tables")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	id := contracts.DatabaseID(r.PathValue("id"))
 	schema := r.URL.Query().Get("schema")
 	items, err := h.viewer.Tables(r.Context(), actor, id, schema)
@@ -249,9 +304,14 @@ func (h *handlers) tables(w http.ResponseWriter, r *http.Request, actor contract
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Tabel", tablesPage(id, schema, items))
+	h.render(w, r, 200, "Tabel · "+nav.Database.Name, tablesPage(nav, schema, items))
 }
 func (h *handlers) details(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	nav, err := h.navigation(r, actor, contracts.ActionViewSchema, "table")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	id := contracts.DatabaseID(r.PathValue("id"))
 	q := r.URL.Query()
 	detail, err := h.viewer.Details(r.Context(), actor, id, q.Get("schema"), q.Get("table"))
@@ -259,9 +319,14 @@ func (h *handlers) details(w http.ResponseWriter, r *http.Request, actor contrac
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Struktur tabel", tablePage(id, detail))
+	h.render(w, r, 200, "Struktur tabel · "+nav.Database.Name, tablePage(nav, detail))
 }
 func (h *handlers) data(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	nav, err := h.navigation(r, actor, contracts.ActionViewData, "data")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	id := contracts.DatabaseID(r.PathValue("id"))
 	q := r.URL.Query()
 	page := 1
@@ -278,7 +343,7 @@ func (h *handlers) data(w http.ResponseWriter, r *http.Request, actor contracts.
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, 200, "Data tabel", dataPage(id, q.Get("schema"), q.Get("table"), result))
+	h.render(w, r, 200, "Data tabel · "+nav.Database.Name, dataPage(nav, q.Get("schema"), q.Get("table"), result))
 }
 
 func viewerURL(id contracts.DatabaseID, view, schema, table string, page int) string {

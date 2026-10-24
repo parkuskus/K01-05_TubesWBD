@@ -56,7 +56,7 @@ func TestAccessibleFiltersGrantsAndDoesNotTreatAdminAsGrant(t *testing.T) {
 	a := &grantAuthorizer{grants: map[contracts.UserID]map[databaseID]contracts.AccessLevel{"viewer": {one.ID: contracts.AccessViewOnly}}}
 	m.authorizer = a
 	items, err := m.Accessible(context.Background(), "viewer")
-	if err != nil || len(items) != 1 || items[0].ID != one.ID {
+	if err != nil || len(items) != 1 || items[0].ID != one.ID || items[0].Level != contracts.AccessViewOnly {
 		t.Fatal("incorrect accessible databases")
 	}
 	items, err = m.Accessible(context.Background(), "admin")
@@ -70,6 +70,49 @@ func TestAccessibleFiltersGrantsAndDoesNotTreatAdminAsGrant(t *testing.T) {
 	a.err = errors.New("sensitive authorizer error")
 	if _, err := m.Accessible(context.Background(), "viewer"); err != ErrUnavailable {
 		t.Fatal("authorization failure was not fail-closed")
+	}
+}
+
+type editCheckFailure struct{ grantAuthorizer }
+
+func (a *editCheckFailure) RequireDatabaseAccess(ctx context.Context, user contracts.UserID, id databaseID, action contracts.DatabaseAction) error {
+	if action == contracts.ActionCreateMigration {
+		return errors.New("private authorization service failure")
+	}
+	return a.grantAuthorizer.RequireDatabaseAccess(ctx, user, id, action)
+}
+
+func TestViewerDescriptionChecksAccessBeforeMetadata(t *testing.T) {
+	m, store := testManager(t)
+	c, err := m.Create(context.Background(), "admin", validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &grantAuthorizer{grants: map[contracts.UserID]map[databaseID]contracts.AccessLevel{"viewer": {c.ID: contracts.AccessViewOnly}, "editor": {c.ID: contracts.AccessViewEdit}}}
+	m.authorizer = a
+	before := store.calls
+	for _, actor := range []contracts.UserID{"", "admin", "stranger"} {
+		if _, err := m.describe(context.Background(), actor, c.ID, contracts.ActionViewSchema); err != contracts.ErrForbidden {
+			t.Fatal("description allowed missing grant")
+		}
+	}
+	if before != store.calls {
+		t.Fatal("denied description reached metadata storage")
+	}
+	choice, err := m.describe(context.Background(), "editor", c.ID, contracts.ActionViewData)
+	if err != nil || choice.Name != c.Name || choice.Level != contracts.AccessViewEdit {
+		t.Fatal("incorrect authorized description")
+	}
+	m.authorizer = &editCheckFailure{grantAuthorizer: *a}
+	before = store.calls
+	if _, err := m.describe(context.Background(), "viewer", c.ID, contracts.ActionViewSchema); err != ErrUnavailable {
+		t.Fatal("capability failure was hidden or leaked")
+	}
+	if store.calls != before {
+		t.Fatal("failed capability check reached metadata storage")
+	}
+	if _, err := m.Accessible(context.Background(), "viewer"); err != ErrUnavailable {
+		t.Fatal("list hid capability lookup failure")
 	}
 }
 

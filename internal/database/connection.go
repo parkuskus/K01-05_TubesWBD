@@ -54,24 +54,45 @@ func (ConnectionInput) String() string      { return "database.ConnectionInput{c
 func (in ConnectionInput) GoString() string { return in.String() }
 
 func (in ConnectionInput) validate(create bool) (ConnectionInput, error) {
+	in, fields := in.validateFields(create)
+	if len(fields) > 0 {
+		return ConnectionInput{}, ErrInvalidInput
+	}
+	return in, nil
+}
+
+// Field messages contain guidance only, never submitted credentials.
+func (in ConnectionInput) validateFields(create bool) (ConnectionInput, map[string]string) {
+	fields := make(map[string]string)
 	in.Name = strings.TrimSpace(in.Name)
 	in.Host = strings.TrimSpace(in.Host)
-	if !validText(in.Name, 100) || !validText(in.Database, 63) || !validText(in.Username, 63) ||
-		!validHost(in.Host) || in.Port < 1 || in.Port > 65535 {
-		return ConnectionInput{}, ErrInvalidInput
+	if !validText(in.Name, 100) {
+		fields["name"] = "Isi nama koneksi, maksimal 100 byte, tanpa karakter kontrol."
+	}
+	if !validText(in.Database, 63) {
+		fields["database"] = "Isi nama database PostgreSQL, maksimal 63 byte, tanpa karakter kontrol."
+	}
+	if !validText(in.Username, 63) {
+		fields["username"] = "Isi username PostgreSQL, maksimal 63 byte, tanpa karakter kontrol."
+	}
+	if !validHost(in.Host) {
+		fields["host"] = "Isi satu hostname atau alamat IP, tanpa URL, port, atau path."
+	}
+	if in.Port < 1 || in.Port > 65535 {
+		fields["port"] = "Isi port berupa angka antara 1 dan 65535."
 	}
 	switch in.SSLMode {
 	case "disable", "require", "verify-full":
 	default:
-		return ConnectionInput{}, ErrInvalidInput
+		fields["sslmode"] = "Pilih salah satu pengaturan TLS yang tersedia."
 	}
 	if create && in.Password == nil {
-		return ConnectionInput{}, ErrInvalidInput
+		fields["password"] = "Isi password PostgreSQL untuk koneksi baru."
 	}
 	if in.Password != nil && (len(*in.Password) == 0 || len(*in.Password) > 4096 || strings.ContainsRune(*in.Password, 0) || !utf8.ValidString(*in.Password)) {
-		return ConnectionInput{}, ErrInvalidInput
+		fields["password"] = "Isi password yang valid, maksimal 4096 byte, tanpa karakter NUL."
 	}
-	return in, nil
+	return in, fields
 }
 
 func validText(s string, limit int) bool {

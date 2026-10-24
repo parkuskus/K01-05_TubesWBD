@@ -3,35 +3,44 @@ package database
 import "strconv"
 import "if3110.local/db-platform/internal/contracts"
 
-templ modulePage(title string) {
+templ modulePage(title string, nav pageNavigation) {
 	<link rel="stylesheet" href="/static/database.css"/>
 	<section class="db-module">
 		<nav class="db-nav" aria-label="Navigasi database">
 			<a href="/">Beranda</a>
 			<a href="/databases/">Database</a>
-			<a href="/databases/connections/">Kelola koneksi</a>
+			if nav.Admin {
+				<a href="/databases/connections/">Kelola koneksi</a>
+			}
 		</nav>
+		if nav.Database.ID != "" {
+			@viewerNavigation(nav)
+		}
 		<h1>{ title }</h1>
 		{ children... }
 	</section>
 }
 
-templ messagePage(message string) {
-	@modulePage("Permintaan gagal") {
+templ messagePage(message string, login bool) {
+	@modulePage("Permintaan gagal", pageNavigation{}) {
 		<p class="db-alert" role="alert">{ message }</p>
-		<a href="/databases/">Kembali ke daftar database</a>
+		if login {
+			<a class="db-button" href="/login">Masuk kembali</a>
+		} else {
+			<a href="/databases/">Kembali ke daftar database</a>
+		}
 	}
 }
 
 templ connectionsPage(items []Connection, message string) {
-	@modulePage("Kelola koneksi") {
-		<p>Daftarkan database PostgreSQL yang akan dikelola platform.</p>
+	@modulePage("Kelola koneksi", pageNavigation{Admin: true}) {
+		<p>Daftarkan database PostgreSQL, lalu beri akses melalui grup di administrasi platform.</p>
 		if message != "" {
 			<p class="db-notice" role="status">{ message }</p>
 		}
 		<a class="db-button" href="/databases/connections/new">Tambah koneksi</a>
 		if len(items) == 0 {
-			<p class="db-empty">Belum ada koneksi terdaftar.</p>
+			<p class="db-empty">Belum ada koneksi terdaftar. Mulai dengan menambahkan koneksi PostgreSQL.</p>
 		} else {
 			<div class="db-scroll" tabindex="0" role="region" aria-label="Daftar koneksi">
 				<table>
@@ -39,7 +48,7 @@ templ connectionsPage(items []Connection, message string) {
 					<tbody>
 						for _, c := range items {
 							<tr>
-								<th scope="row">{ c.Name }</th>
+								<th scope="row">{ c.Name }<small class="db-connection-id">ID koneksi { string(c.ID) }</small></th>
 								<td>
 									{ c.Host }:{ strconv.Itoa(c.Port) }
 								</td>
@@ -62,31 +71,38 @@ templ connectionsPage(items []Connection, message string) {
 	}
 }
 
-templ connectionForm(id contracts.DatabaseID, c Connection, token, message string) {
-	@modulePage("Konfigurasi koneksi") {
+templ connectionForm(id contracts.DatabaseID, c Connection, token, message string, fields map[string]string) {
+	@modulePage("Konfigurasi koneksi", pageNavigation{Admin: true}) {
 		if message != "" {
 			<p class="db-alert" role="alert">{ message }</p>
 		}
 		<form class="db-form" method="post" action={ templ.URL(formAction(id)) }>
 			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
-			<label for="db-name">Nama koneksi</label><input id="db-name" name="name" value={ c.Name } maxlength="100" required/>
-			<label for="db-host">Host</label><input id="db-host" name="host" value={ c.Host } placeholder="localhost" maxlength="253" required/>
-			<label for="db-port">Port</label><input id="db-port" type="number" name="port" value={ strconv.Itoa(c.Port) } min="1" max="65535" required/>
-			<label for="db-database">Nama database</label><input id="db-database" name="database" value={ c.Database } maxlength="63" required/>
-			<label for="db-username">Username PostgreSQL</label><input id="db-username" name="username" value={ c.Username } maxlength="63" autocomplete="off" required/>
+			<label for="db-name">Nama koneksi</label><input id="db-name" aria-invalid={ strconv.FormatBool(fields["name"] != "") } name="name" aria-describedby="db-name-error" value={ c.Name } maxlength="100" required/>
+			@fieldError("name", fields)
+			<label for="db-host">Host</label><input id="db-host" aria-invalid={ strconv.FormatBool(fields["host"] != "") } name="host" aria-describedby="db-host-error" value={ c.Host } placeholder="localhost" maxlength="253" required/>
+			@fieldError("host", fields)
+			<label for="db-port">Port</label><input id="db-port" aria-invalid={ strconv.FormatBool(fields["port"] != "") } type="number" name="port" aria-describedby="db-port-error" value={ strconv.Itoa(c.Port) } min="1" max="65535" required/>
+			@fieldError("port", fields)
+			<label for="db-database">Nama database</label><input id="db-database" aria-invalid={ strconv.FormatBool(fields["database"] != "") } name="database" aria-describedby="db-database-error" value={ c.Database } maxlength="63" required/>
+			@fieldError("database", fields)
+			<label for="db-username">Username PostgreSQL</label><input id="db-username" aria-invalid={ strconv.FormatBool(fields["username"] != "") } name="username" aria-describedby="db-username-error" value={ c.Username } maxlength="63" autocomplete="off" required/>
+			@fieldError("username", fields)
 			<label for="db-password">Password PostgreSQL</label>
 			if id == "" {
-				<input id="db-password" name="password" type="password" maxlength="4096" autocomplete="new-password" required/>
+				<input id="db-password" aria-invalid={ strconv.FormatBool(fields["password"] != "") } name="password" type="password" maxlength="4096" autocomplete="new-password" aria-describedby="db-password-error" required/>
 			} else {
-				<input id="db-password" name="password" type="password" maxlength="4096" autocomplete="new-password" aria-describedby="db-password-help"/>
+				<input id="db-password" aria-invalid={ strconv.FormatBool(fields["password"] != "") } name="password" type="password" maxlength="4096" autocomplete="new-password" aria-describedby="db-password-help db-password-error"/>
 				<small id="db-password-help">Kosongkan untuk mempertahankan password saat ini.</small>
 			}
+			@fieldError("password", fields)
 			<label for="db-sslmode">Koneksi TLS</label>
-			<select id="db-sslmode" name="sslmode" aria-describedby="db-tls-help" required>
+			<select id="db-sslmode" aria-invalid={ strconv.FormatBool(fields["sslmode"] != "") } name="sslmode" aria-describedby="db-tls-help db-sslmode-error" required>
 				<option value="disable" selected?={ c.SSLMode == "disable" }>Disable — untuk koneksi lokal</option>
 				<option value="require" selected?={ c.SSLMode == "require" }>Require — terenkripsi tanpa verifikasi hostname</option>
 				<option value="verify-full" selected?={ c.SSLMode == "verify-full" }>Verify full — verifikasi sertifikat dan hostname</option>
 			</select>
+			@fieldError("sslmode", fields)
 			<small id="db-tls-help">Gunakan verifikasi penuh untuk server dengan sertifikat tepercaya.</small>
 			<div class="db-actions"><button type="submit">Simpan koneksi</button><a href="/databases/connections/">Batal</a></div>
 		</form>
@@ -101,9 +117,9 @@ func formAction(id contracts.DatabaseID) string {
 }
 
 templ deleteConfirmation(c Connection, token string) {
-	@modulePage("Hapus koneksi") {
+	@modulePage("Hapus koneksi", pageNavigation{Admin: true}) {
 		<p>Hapus koneksi <strong>{ c.Name }</strong> dari platform?</p>
-		<p>Database target beserta isinya tidak dihapus. Akses group yang terkait dengan koneksi perlu ikut dicabut.</p>
+		<p>Database target beserta isinya tidak dihapus. Pengguna tidak lagi dapat mengakses database melalui koneksi ini.</p>
 		<form method="post" action={ templ.URL(connectionURL(c.ID, "delete")) }>
 			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
 			<div class="db-actions"><button class="db-danger" type="submit">Hapus koneksi</button><a href="/databases/connections/">Batal</a></div>
@@ -111,53 +127,63 @@ templ deleteConfirmation(c Connection, token string) {
 	}
 }
 
-templ databasesPage(items []DatabaseChoice) {
-	@modulePage("Database") {
-		<p>Pilih database yang ingin Anda lihat.</p>
+templ databasesPage(items []DatabaseChoice, admin bool) {
+	@modulePage("Database", pageNavigation{Admin: admin}) {
+		<p>Pilih database untuk melihat schema, tabel, dan data. Tingkat akses menentukan apakah Anda dapat membuat migration.</p>
 		if len(items) == 0 {
-			<p class="db-empty">Belum ada database yang dapat Anda akses.</p>
+			<div class="db-empty">
+				<p>Belum ada database yang dapat Anda akses.</p>
+				if admin {
+					<p>Daftarkan koneksi, lalu tambahkan akun Anda ke grup yang memiliki akses. Status admin tidak otomatis memberi akses ke isi database.</p>
+					<div class="db-actions"><a href="/databases/connections/">Kelola koneksi</a><a href="/platform/groups">Atur grup dan akses</a></div>
+				} else {
+					<p>Minta admin menambahkan Anda ke grup yang memiliki akses database.</p>
+				}
+			</div>
 		} else {
 			<ul class="db-list">
 				for _, c := range items {
-					<li><a href={ templ.URL(viewerURL(c.ID, "schemas", "", "", 0)) }>{ c.Name }</a></li>
+					<li><a href={ templ.URL(viewerURL(c.ID, "schemas", "", "", 0)) }>{ c.Name }</a>@accessBadge(c.Level)
+</li>
 				}
 			</ul>
 		}
 	}
 }
 
-templ schemasPage(id contracts.DatabaseID, schemas []string) {
-	@modulePage("Schema") {
+templ schemasPage(nav pageNavigation, schemas []string) {
+	@modulePage("Schema", nav) {
+		<p>Schema mengelompokkan tabel dan view di dalam database. Pilih schema untuk melihat isinya.</p>
 		if len(schemas) == 0 {
-			<p class="db-empty">Tidak ada schema yang dapat ditampilkan.</p>
+			<p class="db-empty">Tidak ada schema yang dapat ditampilkan. Hubungi admin untuk memeriksa struktur dan izin koneksi PostgreSQL.</p>
 		} else {
 			<ul class="db-list">
 				for _, schema := range schemas {
-					<li><a href={ templ.URL(viewerURL(id, "tables", schema, "", 0)) }>{ schema }</a></li>
+					<li><a href={ templ.URL(viewerURL(nav.Database.ID, "tables", schema, "", 0)) }>{ schema }</a></li>
 				}
 			</ul>
 		}
 	}
 }
 
-templ tablesPage(id contracts.DatabaseID, schema string, tables []Table) {
-	@modulePage("Tabel · " + schema) {
-		<a href={ templ.URL(viewerURL(id, "schemas", "", "", 0)) }>Kembali ke schema</a>
+templ tablesPage(nav pageNavigation, schema string, tables []Table) {
+	@modulePage("Tabel · "+schema, nav) {
+		<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>Kembali ke schema</a>
 		if len(tables) == 0 {
 			<p class="db-empty">Schema ini belum memiliki tabel atau view.</p>
 		} else {
 			<ul class="db-list">
 				for _, table := range tables {
-					<li><a href={ templ.URL(viewerURL(id, "table", schema, table.Name, 0)) }>{ table.Name }</a><small>{ table.Kind }</small></li>
+					<li><a href={ templ.URL(viewerURL(nav.Database.ID, "table", schema, table.Name, 0)) }>{ table.Name }</a><small>{ table.Kind }</small></li>
 				}
 			</ul>
 		}
 	}
 }
 
-templ tablePage(id contracts.DatabaseID, detail TableDetails) {
-	@modulePage(detail.Schema + "." + detail.Name) {
-		<div class="db-actions"><a href={ templ.URL(viewerURL(id, "tables", detail.Schema, "", 0)) }>Kembali ke tabel</a><a class="db-button" href={ templ.URL(viewerURL(id, "data", detail.Schema, detail.Name, 1)) }>Lihat data</a></div>
+templ tablePage(nav pageNavigation, detail TableDetails) {
+	@modulePage(detail.Schema+"."+detail.Name, nav) {
+		<div class="db-actions"><a href={ templ.URL(viewerURL(nav.Database.ID, "tables", detail.Schema, "", 0)) }>Kembali ke tabel</a><a class="db-button" href={ templ.URL(viewerURL(nav.Database.ID, "data", detail.Schema, detail.Name, 1)) }>Lihat data</a></div>
 		<h2>Kolom</h2>
 		<div class="db-scroll" tabindex="0" role="region" aria-label="Kolom tabel">
 			<table>
@@ -202,12 +228,15 @@ templ definitionList(items []Definition) {
 	}
 }
 
-templ dataPage(id contracts.DatabaseID, schema, table string, data DataPage) {
-	@modulePage("Data · " + schema + "." + table) {
-		<a href={ templ.URL(viewerURL(id, "table", schema, table, 0)) }>Lihat struktur tabel</a>
+templ dataPage(nav pageNavigation, schema, table string, data DataPage) {
+	@modulePage("Data · "+schema+"."+table, nav) {
+		<a href={ templ.URL(viewerURL(nav.Database.ID, "table", schema, table, 0)) }>Lihat struktur tabel</a>
 		<p>Hanya baca · maksimal { strconv.Itoa(PageSize) } baris per halaman. Nilai panjang ditampilkan sebagian.</p>
 		if len(data.Rows) == 0 {
 			<p class="db-empty">Tidak ada data pada halaman ini.</p>
+			if data.Page > 1 {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "data", schema, table, 1)) }>Kembali ke halaman pertama</a>
+			}
 		} else {
 			<div class="db-scroll" tabindex="0" role="region" aria-label="Data tabel">
 				<table>
@@ -215,7 +244,7 @@ templ dataPage(id contracts.DatabaseID, schema, table string, data DataPage) {
 					<thead>
 						<tr>
 							for _, column := range data.Columns {
-								<th>{ column }</th>
+								<th scope="col">{ column }</th>
 							}
 						</tr>
 					</thead>
@@ -239,12 +268,65 @@ templ dataPage(id contracts.DatabaseID, schema, table string, data DataPage) {
 		}
 		<nav class="db-actions" aria-label="Halaman data">
 			if data.Page > 1 {
-				<a href={ templ.URL(viewerURL(id, "data", schema, table, data.Page-1)) }>← Sebelumnya</a>
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "data", schema, table, data.Page-1)) }>← Sebelumnya</a>
 			}
 			<span>Halaman { strconv.Itoa(data.Page) }</span>
 			if data.HasNext {
-				<a href={ templ.URL(viewerURL(id, "data", schema, table, data.Page+1)) }>Berikutnya →</a>
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "data", schema, table, data.Page+1)) }>Berikutnya →</a>
 			}
 		</nav>
 	}
+}
+
+templ fieldError(field string, fields map[string]string) {
+	<small id={ "db-" + field + "-error" } class="db-field-error">{ fields[field] }</small>
+}
+
+templ accessBadge(level contracts.AccessLevel) {
+	<span class="db-badge">
+		if level == contracts.AccessViewEdit {
+			View + Edit
+		} else if level == contracts.AccessViewOnly {
+			View Only
+		} else {
+			Tanpa akses
+		}
+	</span>
+}
+
+templ viewerNavigation(nav pageNavigation) {
+	<nav class="db-breadcrumb" aria-label="Jejak navigasi">
+		<a href="/databases/">Database</a><span aria-hidden="true">/</span>
+		if nav.View == "schemas" {
+			<span aria-current="page">{ nav.Database.Name }</span>
+		} else {
+			<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>{ nav.Database.Name }</a>
+		}
+		if nav.Schema != "" {
+			<span aria-hidden="true">/</span>
+			if nav.View == "tables" {
+				<span aria-current="page">{ nav.Schema }</span>
+			} else {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "tables", nav.Schema, "", 0)) }>{ nav.Schema }</a>
+			}
+		}
+		if nav.Table != "" {
+			<span aria-hidden="true">/</span>
+			if nav.View == "table" {
+				<span aria-current="page">{ nav.Table }</span>
+			} else {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "table", nav.Schema, nav.Table, 0)) }>{ nav.Table }</a>
+				<span aria-hidden="true">/</span><span aria-current="page">Data</span>
+			}
+		}
+	</nav>
+	<div class="db-context">
+		@accessBadge(nav.Database.Level)
+		<div class="db-actions">
+			<a href={ templ.URL(viewerURL(nav.Database.ID, "migrations", "", "", 0)) }>Riwayat migration</a>
+			if nav.Database.Level == contracts.AccessViewEdit {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "migrations/new", "", "", 0)) }>Buat migration</a>
+			}
+		</div>
+	</div>
 }
