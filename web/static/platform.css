@@ -1,0 +1,69 @@
+body:has(.platform-admin) {
+  display: block;
+}
+
+main:has(.platform-admin) {
+  box-sizing: border-box;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.platform-admin {
+  display: grid;
+  gap: 1.5rem;
+  line-height: 1.5;
+}
+
+.platform-admin nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.platform-admin section {
+  padding: 1.25rem 0;
+  border-top: 1px solid #cbd3dc;
+}
+
+.platform-admin h1, .platform-admin h2, .platform-admin p {
+  margin: 0;
+}
+
+.platform-admin h1 {
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+}
+
+.platform-admin h2 {
+  font-size: 1.2rem;
+}
+
+.platform-admin form {
+  display: inline-grid;
+  gap: .5rem;
+  align-items: end;
+  margin: .75rem 1rem .75rem 0;
+}
+
+.platform-admin input, .platform-admin select, .platform-admin button {
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  padding: .5rem .75rem;
+  font: inherit;
+}
+
+.platform-admin button {
+  border: 0;
+  border-radius: .25rem;
+  background: #20242b;
+  color: white;
+  cursor: pointer;
+}
+
+.platform-admin button:hover { background: #394352; }
+.platform-admin :is(a, button, input, select):focus-visible { outline: 3px solid #234a7d; outline-offset: 2px; }
+.platform-admin li { margin-block: .75rem; }
+.platform-admin a { color: #234a7d; text-underline-offset: .2em; }
+
+@media (max-width: 42rem) {
+  .platform-admin form { display: grid; margin-right: 0; }
+}

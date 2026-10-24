@@ -1,0 +1,145 @@
+package platformui
+
+import "if3110.local/db-platform/internal/platform"
+
+templ usersPage(users []platform.User, token string) {
+	<link rel="stylesheet" href="/static/platform.css"/>
+	<section class="platform-admin">
+		<nav aria-label="Administrasi"><a href="/platform/users">Pengguna</a> · <a href="/platform/groups">Grup</a></nav>
+		<h1>Pengguna platform</h1>
+		if len(users) == 0 {
+			<p>Belum ada pengguna.</p>
+		}
+		for _, user := range users {
+			<section aria-label={ "Pengguna " + user.Username }>
+				<h2>{ user.Username }</h2>
+				<p>ID { string(user.ID) } ·
+					if user.IsPlatformAdmin {
+						Administrator
+					} else {
+						Pengguna biasa
+					}
+				</p>
+				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/username") }>
+					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+					<label class="form-field">Nama pengguna <input name="username" value={ user.Username } required/></label>
+					<button type="submit">Ubah nama</button>
+				</form>
+				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/password") }>
+					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+					<label class="form-field">Kata sandi baru <input type="password" name="password" autocomplete="new-password" required/></label>
+					<button type="submit">Ganti kata sandi</button>
+				</form>
+				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/admin") }>
+					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+					if user.IsPlatformAdmin {
+						<input type="hidden" name="admin" value="false"/><button type="submit">Cabut admin</button>
+					} else {
+						<input type="hidden" name="admin" value="true"/><button type="submit">Jadikan admin</button>
+					}
+				</form>
+				<form method="post" action={ templ.URL("/platform/users/" + string(user.ID) + "/delete") }>
+					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+					<button type="submit">Hapus pengguna</button>
+				</form>
+			</section>
+		}
+		<h2>Tambah pengguna</h2>
+		<form method="post" action="/platform/users">
+			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+			<label class="form-field">Nama pengguna <input name="username" required/></label>
+			<label class="form-field">Kata sandi <input type="password" name="password" autocomplete="new-password" required/></label>
+			<button type="submit">Tambah pengguna</button>
+		</form>
+	</section>
+}
+
+templ groupsPage(groups []platform.Group, token string) {
+	<link rel="stylesheet" href="/static/platform.css"/>
+	<section class="platform-admin">
+		<nav aria-label="Administrasi"><a href="/platform/users">Pengguna</a> · <a href="/platform/groups">Grup</a></nav>
+		<h1>Grup platform</h1>
+		if len(groups) == 0 {
+			<p>Belum ada grup.</p>
+		}
+		for _, group := range groups {
+			<section aria-label={ "Grup " + group.Name }>
+				<h2><a href={ templ.URL("/platform/groups/" + string(group.ID)) }>{ group.Name }</a></h2>
+				<form method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/name") }>
+					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+					<label class="form-field">Nama grup <input name="name" value={ group.Name } required/></label>
+					<button type="submit">Ubah nama</button>
+				</form>
+				<form method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/delete") }>
+					<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+					<button type="submit">Hapus grup</button>
+				</form>
+			</section>
+		}
+		<h2>Tambah grup</h2>
+		<form method="post" action="/platform/groups">
+			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+			<label class="form-field">Nama grup <input name="name" required/></label>
+			<button type="submit">Tambah grup</button>
+		</form>
+	</section>
+}
+
+templ groupPage(id, name string, members []platform.User, grants []platform.Grant, token string) {
+	<link rel="stylesheet" href="/static/platform.css"/>
+	<section class="platform-admin">
+		<nav aria-label="Administrasi"><a href="/platform/groups">Kembali ke grup</a></nav>
+		<h1>{ name }</h1>
+		<h2>Anggota</h2>
+		if len(members) == 0 {
+			<p>Belum ada anggota.</p>
+		}
+		<ul>
+			for _, member := range members {
+				<li>{ member.Username } (ID { string(member.ID) })
+					<form method="post" action={ templ.URL("/platform/groups/" + id + "/members") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<input type="hidden" name="user_id" value={ string(member.ID) }/>
+						<input type="hidden" name="member" value="false"/>
+						<button type="submit">Hapus anggota</button>
+					</form>
+				</li>
+			}
+		</ul>
+		<form method="post" action={ templ.URL("/platform/groups/" + id + "/members") }>
+			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+			<input type="hidden" name="member" value="true"/>
+			<label class="form-field">ID pengguna <input name="user_id" inputmode="numeric" required/></label>
+			<button type="submit">Tambah anggota</button>
+		</form>
+		<h2>Akses database</h2>
+		if len(grants) == 0 {
+			<p>Belum ada akses database.</p>
+		}
+		<ul>
+			for _, grant := range grants {
+				<li>Database ID { string(grant.DatabaseID) } ·
+					if grant.Level == 2 {
+						View + Edit
+					} else {
+						View Only
+					}
+					<form method="post" action={ templ.URL("/platform/groups/" + id + "/grants") }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<input type="hidden" name="database_id" value={ string(grant.DatabaseID) }/>
+						<input type="hidden" name="level" value="0"/>
+						<button type="submit">Cabut akses</button>
+					</form>
+				</li>
+			}
+		</ul>
+		<form method="post" action={ templ.URL("/platform/groups/" + id + "/grants") }>
+			<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+			<label class="form-field">ID koneksi database <input name="database_id" inputmode="numeric" required/></label>
+			<label>Tingkat akses
+				<select name="level"><option value="1">View Only</option><option value="2">View + Edit</option></select>
+			</label>
+			<button type="submit">Simpan akses</button>
+		</form>
+	</section>
+}
