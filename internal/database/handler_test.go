@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/a-h/templ"
+	"github.com/jackc/pgx/v5/pgconn"
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/contracts"
 )
@@ -179,12 +180,21 @@ func TestViewerHTTPDeniesBeforeConnecting(t *testing.T) {
 	}
 }
 
-type stubViewer struct{ err error }
+type stubViewer struct {
+	err   error
+	empty bool
+}
 
 func (v stubViewer) Schemas(context.Context, contracts.UserID, databaseID) ([]string, error) {
+	if v.empty {
+		return nil, v.err
+	}
 	return []string{"public"}, v.err
 }
 func (v stubViewer) Tables(context.Context, contracts.UserID, databaseID, string) ([]Table, error) {
+	if v.empty {
+		return nil, v.err
+	}
 	return []Table{{Name: "items", Kind: "Table"}}, v.err
 }
 func (v stubViewer) Details(context.Context, contracts.UserID, databaseID, string, string) (TableDetails, error) {
@@ -194,11 +204,34 @@ func (v stubViewer) Data(_ context.Context, _ contracts.UserID, _ databaseID, _,
 	if page < 1 || page > 1000000 {
 		return DataPage{}, ErrInvalidInput
 	}
+	if v.empty {
+		return DataPage{Page: page}, v.err
+	}
 	return DataPage{Columns: []string{"label", "empty"}, Rows: [][]Cell{{{Text: "<script>alert(1)</script>"}, {Null: true}}}, Page: page, HasNext: true}, v.err
+}
+
+func TestViewerEmptyPagesKeepRecoveryNavigation(t *testing.T) {
+	h, handler, _ := testHandlers(t)
+	seedViewer(t, h)
+	h.viewer = stubViewer{empty: true}
+	for _, test := range []struct{ path, message string }{
+		{"/databases/1/schemas", "Tidak ada schema"},
+		{"/databases/1/tables?schema=public", "belum memiliki tabel"},
+		{"/databases/1/data?schema=public&table=items&page=3", "Kembali ke halaman pertama"},
+	} {
+		w := requestPage(handler, test.path, "viewer")
+		if w.Code != 200 || !strings.Contains(w.Body.String(), test.message) || !strings.Contains(w.Body.String(), `href="/databases/1/migrations"`) {
+			t.Fatalf("empty page has no next step: %s", test.path)
+		}
+		if strings.Contains(w.Body.String(), "Berikutnya") {
+			t.Fatal("empty page offers a next page")
+		}
+	}
 }
 
 func TestViewerHTTPRendersObjectsAndEscapesData(t *testing.T) {
 	h, handler, _ := testHandlers(t)
+	seedViewer(t, h)
 	h.viewer = stubViewer{}
 	for _, test := range []struct{ path, text string }{
 		{"/databases/1/schemas", "public"},
@@ -231,5 +264,117 @@ func TestViewerHTTPRendersObjectsAndEscapesData(t *testing.T) {
 	parsed, err := url.Parse(path)
 	if err != nil || parsed.Query().Get("schema") != "a/b?c" || parsed.Query().Get("table") != "quoted\"table" {
 		t.Fatal("object URL encoding")
+	}
+}
+
+func seedViewer(t *testing.T, h *handlers) *grantAuthorizer {
+	t.Helper()
+	in := validInput()
+	in.Name = "Inventory <staging>"
+	if _, err := h.manager.Create(context.Background(), "admin", in); err != nil {
+		t.Fatal(err)
+	}
+	a := &grantAuthorizer{grants: map[contracts.UserID]map[databaseID]contracts.AccessLevel{
+		"viewer": {"1": contracts.AccessViewOnly}, "editor": {"1": contracts.AccessViewEdit},
+	}}
+	h.manager.authorizer = a
+	h.viewer = stubViewer{}
+	return a
+}
+
+func TestViewerNavigationReflectsCurrentAccess(t *testing.T) {
+	h, handler, _ := testHandlers(t)
+	a := seedViewer(t, h)
+	for _, user := range []string{"viewer", "editor"} {
+		for _, path := range []string{"/databases/", "/databases/1/schemas", "/databases/1/tables?schema=public", "/databases/1/table?schema=public&table=items", "/databases/1/data?schema=public&table=items"} {
+			w := requestPage(handler, path, user)
+			body := w.Body.String()
+			if w.Code != 200 || !strings.Contains(body, "Inventory &lt;staging&gt;") {
+				t.Fatalf("%s %s: missing safe database name (status %d)", user, path, w.Code)
+			}
+			for _, private := range []string{"Kelola koneksi", "target_user", "localhost", "secret'"} {
+				if strings.Contains(body, private) {
+					t.Fatalf("viewer leaked %s", private)
+				}
+			}
+			level := "View Only"
+			if user == "editor" {
+				level = "View + Edit"
+			}
+			if !strings.Contains(body, level) {
+				t.Fatal("missing access badge")
+			}
+			if path != "/databases/" {
+				if !strings.Contains(body, `href="/databases/1/migrations"`) || !strings.Contains(body, `aria-label="Jejak navigasi"`) {
+					t.Fatal("missing contextual navigation")
+				}
+				if strings.Contains(body, `href="/databases/1/migrations/new"`) != (user == "editor") {
+					t.Fatal("incorrect create-migration visibility")
+				}
+			}
+		}
+	}
+	// Navigation changes on the next request, with no cached role or grant.
+	a.grants["editor"]["1"] = contracts.AccessViewOnly
+	w := requestPage(handler, "/databases/1/schemas", "editor")
+	if w.Code != 200 || strings.Contains(w.Body.String(), "Buat migration") {
+		t.Fatal("downgrade left edit navigation")
+	}
+	delete(a.grants["editor"], "1")
+	w = requestPage(handler, "/databases/1/schemas", "editor")
+	if w.Code != 403 || strings.Contains(w.Body.String(), "Inventory") {
+		t.Fatal("revocation leaked database metadata")
+	}
+}
+
+func TestDatabaseEmptyStatesAndAdminWithoutGrant(t *testing.T) {
+	h, handler, _ := testHandlers(t)
+	seedViewer(t, h)
+	for _, user := range []string{"admin", "stranger"} {
+		w := requestPage(handler, "/databases/", user)
+		body := w.Body.String()
+		if w.Code != 200 || !strings.Contains(body, "Belum ada database") || strings.Contains(body, "Inventory") {
+			t.Fatal("incorrect empty database list")
+		}
+		if strings.Contains(body, "Kelola koneksi") != (user == "admin") {
+			t.Fatal("admin navigation exposed to member")
+		}
+		if user == "admin" && !strings.Contains(body, `href="/platform/groups"`) {
+			t.Fatal("admin has no next step")
+		}
+		if user == "stranger" && !strings.Contains(body, "Minta admin") {
+			t.Fatal("member has no guidance")
+		}
+	}
+	w := requestPage(handler, "/databases/1/schemas", "admin")
+	if w.Code != 403 || strings.Contains(w.Body.String(), "Inventory") {
+		t.Fatal("admin bypassed grant")
+	}
+	w = requestPage(handler, "/databases/", "")
+	if w.Code != 401 || !strings.Contains(w.Body.String(), `href="/login"`) {
+		t.Fatal("missing login recovery")
+	}
+}
+
+func TestConnectionFieldErrorsPreserveSafeInput(t *testing.T) {
+	_, handler, store := testHandlers(t)
+	cookies, token := formToken(t, handler, "/databases/connections/new", "admin")
+	form := inputForm(token)
+	form.Set("host", "postgres://user:dsn-secret@localhost/target")
+	form.Set("port", "70000")
+	w := submitForm(handler, "/databases/connections/", "admin", form, cookies)
+	body := w.Body.String()
+	for _, want := range []string{`role="alert"`, `id="db-host-error"`, "Isi satu hostname", "antara 1 dan 65535", `aria-invalid="true"`, `value="Inventory"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing validation feedback %s", want)
+		}
+	}
+	if w.Code != 400 || store.calls != 0 || strings.Contains(body, "do-not-echo-secret") || strings.Contains(body, "dsn-secret") {
+		t.Fatal("invalid form mutated storage or leaked password")
+	}
+	store.err = &pgconn.PgError{Code: "23505", Detail: "private database details"}
+	w = submitForm(handler, "/databases/connections/", "admin", inputForm(token), cookies)
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "Pilih nama lain") || strings.Contains(w.Body.String(), "do-not-echo-secret") {
+		t.Fatal("conflict feedback is unsafe or missing")
 	}
 }

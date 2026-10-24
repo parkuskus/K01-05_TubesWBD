@@ -18,8 +18,9 @@ const maxCellRunes = 1024
 
 // DatabaseChoice deliberately omits connection credentials and server addresses.
 type DatabaseChoice struct {
-	ID   contracts.DatabaseID
-	Name string
+	ID    contracts.DatabaseID
+	Name  string
+	Level contracts.AccessLevel
 }
 type Table struct{ Name, Kind string }
 type Column struct {
@@ -70,9 +71,59 @@ func (m *Manager) Accessible(ctx context.Context, actor contracts.UserID) ([]Dat
 		if err != nil {
 			return nil, storageError(err)
 		}
-		result = append(result, DatabaseChoice{ID: c.ID, Name: c.Name})
+		level, err := m.displayAccess(ctx, actor, c.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, DatabaseChoice{ID: c.ID, Name: c.Name, Level: level})
 	}
 	return result, nil
+}
+
+// displayAccess is only called after a successful read-access check. It asks the
+// shared authorizer for the editing capability; it never calculates group grants.
+func (m *Manager) displayAccess(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID) (contracts.AccessLevel, error) {
+	err := m.authorizer.RequireDatabaseAccess(ctx, actor, id, contracts.ActionCreateMigration)
+	if errors.Is(err, contracts.ErrForbidden) {
+		return contracts.AccessViewOnly, nil
+	}
+	if err != nil {
+		return contracts.AccessNone, storageError(err)
+	}
+	return contracts.AccessViewEdit, nil
+}
+
+// describe exposes only the authorized target's display name and capabilities.
+// Unlike Get (admin-only), it is suitable for a member's viewer breadcrumbs.
+func (m *Manager) describe(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID, action contracts.DatabaseAction) (DatabaseChoice, error) {
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	if actor == "" {
+		return DatabaseChoice{}, contracts.ErrForbidden
+	}
+	if !validID(id) {
+		return DatabaseChoice{}, ErrInvalidInput
+	}
+	if err := m.authorizer.RequireDatabaseAccess(ctx, actor, id, action); err != nil {
+		if errors.Is(err, contracts.ErrForbidden) {
+			return DatabaseChoice{}, contracts.ErrForbidden
+		}
+		return DatabaseChoice{}, storageError(err)
+	}
+	level, err := m.displayAccess(ctx, actor, id)
+	if err != nil {
+		return DatabaseChoice{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return DatabaseChoice{}, ErrClosed
+	}
+	r, err := m.store.get(ctx, id)
+	if err != nil {
+		return DatabaseChoice{}, storageError(err)
+	}
+	return DatabaseChoice{ID: id, Name: r.Name, Level: level}, nil
 }
 
 type Viewer struct {
