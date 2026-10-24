@@ -179,7 +179,7 @@ func (m *SessionManager) RequireSession(next http.Handler) http.Handler {
 		} else {
 			m.setCookie(w, cookie.Value, now, record.AbsoluteExpiresAt)
 		}
-		r = r.WithContext(context.WithValue(r.Context(), userContextKey{}, record.UserID))
+		r = r.WithContext(WithUser(r.Context(), record.UserID))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -231,6 +231,10 @@ func (m *SessionManager) RevokeUser(ctx context.Context, userID contracts.UserID
 		return ErrUnauthenticated
 	}
 	return m.store.RevokeUser(ctx, userID, m.now())
+}
+
+func WithUser(ctx context.Context, userID contracts.UserID) context.Context {
+	return context.WithValue(ctx, userContextKey{}, userID)
 }
 
 func CurrentUser(r *http.Request) (contracts.UserID, bool) {

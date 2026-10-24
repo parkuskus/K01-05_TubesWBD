@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -11,13 +12,14 @@ import (
 )
 
 type Config struct {
-	Port                 string
-	Environment          string
-	PlatformDatabaseURL  string
-	CSRFKey              []byte
-	InitialAdminUsername string
-	InitialAdminPassword string
-	SecureCookies        bool
+	Port                  string
+	Environment           string
+	PlatformDatabaseURL   string
+	CSRFKey               []byte
+	DatabaseCredentialKey []byte
+	InitialAdminUsername  string
+	InitialAdminPassword  string
+	SecureCookies         bool
 }
 
 func Load() (Config, error) {
@@ -72,6 +74,12 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	}
 	if config.CSRFKey, err = hex.DecodeString(get("CSRF_AUTH_KEY")); err != nil || len(config.CSRFKey) != 32 {
 		return Config{}, errors.New("CSRF_AUTH_KEY must be 64 hexadecimal characters")
+	}
+	if config.DatabaseCredentialKey, err = hex.DecodeString(get("DATABASE_CREDENTIAL_KEY")); err != nil || len(config.DatabaseCredentialKey) != 32 {
+		return Config{}, errors.New("DATABASE_CREDENTIAL_KEY must be 64 hexadecimal characters")
+	}
+	if bytes.Equal(config.DatabaseCredentialKey, config.CSRFKey) {
+		return Config{}, errors.New("DATABASE_CREDENTIAL_KEY must be distinct from CSRF_AUTH_KEY")
 	}
 	if secure := get("SECURE_COOKIES"); secure != "" {
 		config.SecureCookies, err = strconv.ParseBool(secure)
