@@ -1,7 +1,9 @@
 package migration
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -63,6 +65,10 @@ type MigrationRecord struct {
 	ExecutedAt   *time.Time
 }
 
+func reviewedDraft(record MigrationRecord) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(record.Title+"\x00"+record.SQLText)))
+}
+
 func normalizeSQL(sqlText string) (string, error) {
 	trimmed := strings.TrimSpace(sqlText)
 	if trimmed == "" {
@@ -74,4 +80,3 @@ func normalizeSQL(sqlText string) (string, error) {
 func normalizeTitle(title string) string {
 	return strings.TrimSpace(title)
 }
-

@@ -247,7 +247,7 @@ func (s *PostgresStore) GetByID(ctx context.Context, id int64) (MigrationRecord,
 }
 
 // jalankan draft migration berdasarkan nomor versi di dalam transaksi
-func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, executedBy contracts.UserID, now time.Time) (MigrationRecord, error) {
+func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, executedBy contracts.UserID, now time.Time, reviewed string) (MigrationRecord, error) {
 	if version <= 0 {
 		return MigrationRecord{}, ErrInvalidVersion
 	}
@@ -282,6 +282,9 @@ func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, execute
 	}
 	if record.Status != StatusDraft {
 		return MigrationRecord{}, ErrMigrationAlreadyApplied
+	}
+	if reviewed == "" || reviewed != reviewedDraft(record) {
+		return MigrationRecord{}, ErrVersionConflict
 	}
 
 	if _, execErr := tx.ExecContext(ctx, record.SQLText); execErr != nil {

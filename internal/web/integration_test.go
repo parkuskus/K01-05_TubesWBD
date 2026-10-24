@@ -321,8 +321,16 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 	}
 
 	execToken := editorClient.csrfFrom("/databases/1/migrations/1")
+	detailHTML := editorClient.get("/databases/1/migrations/1").Body.String()
+	const reviewField = `name="reviewed_draft" value="`
+	start := strings.Index(detailHTML, reviewField)
+	if start < 0 {
+		t.Fatal("draft review field missing from detail page")
+	}
+	review := strings.SplitN(detailHTML[start+len(reviewField):], `"`, 2)[0]
 	execResp := editorClient.post("/databases/1/migrations/1/execute", url.Values{
 		"confirm_execute":    {"true"},
+		"reviewed_draft":     {review},
 		"gorilla.csrf.Token": {execToken},
 	})
 	if execResp.Code != http.StatusSeeOther || execResp.Header().Get("Location") != "/databases/1/migrations/1" {
@@ -419,4 +427,3 @@ func strconvItoa(n int) string {
 	}
 	return string(digits[i:])
 }
-

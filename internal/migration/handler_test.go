@@ -2,7 +2,9 @@ package migration
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -109,7 +111,7 @@ func (f *fakeMigrationService) UpdateDraft(ctx context.Context, userID contracts
 	return MigrationRecord{}, ErrMigrationNotFound
 }
 
-func (f *fakeMigrationService) ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64) (MigrationRecord, error) {
+func (f *fakeMigrationService) ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64, reviewed string) (MigrationRecord, error) {
 	f.calls++
 	if err := f.authz.RequireDatabaseAccess(ctx, userID, dbID, contracts.ActionRunMigration); err != nil {
 		return MigrationRecord{}, err
@@ -119,6 +121,9 @@ func (f *fakeMigrationService) ExecuteMigration(ctx context.Context, userID cont
 		if list[i].Version == version {
 			if list[i].Status != StatusDraft {
 				return MigrationRecord{}, ErrMigrationAlreadyApplied
+			}
+			if reviewed == "" || reviewed != reviewedDraft(list[i]) {
+				return MigrationRecord{}, ErrVersionConflict
 			}
 			now := time.Date(2026, 10, 23, 12, 10, 0, 0, time.UTC)
 			list[i].ExecutedBy = userID
@@ -338,8 +343,15 @@ func TestHandlerViewEditUserCreateEditAndExecuteFlow(t *testing.T) {
 	}
 
 	// 3. eksekusi draft versi 1 dengan konfirmasi tinjauan -> sukses & redirect
+	preview := httptest.NewRecorder()
+	router.ServeHTTP(preview, httptest.NewRequest(http.MethodGet, "http://example.com/databases/db-prod/migrations/1", nil))
+	reviewInput := regexp.MustCompile(`name="reviewed_draft" value="([a-f0-9]{64})"`).FindStringSubmatch(preview.Body.String())
+	if len(reviewInput) != 2 {
+		t.Fatal("GET detail did not include reviewed draft fingerprint")
+	}
 	execRec := sendPostForm(router, "/databases/db-prod/migrations/1/execute", url.Values{
 		"confirm_execute": {"true"},
+		"reviewed_draft":  {reviewInput[1]},
 	}, nil)
 	if execRec.Code != http.StatusSeeOther || execRec.Header().Get("Location") != "/databases/db-prod/migrations/1" {
 		t.Fatalf("POST execute migration = %d (Location: %q), want 303", execRec.Code, execRec.Header().Get("Location"))
@@ -410,6 +422,31 @@ func TestHandlerRejectsExecutionWithoutConfirmation(t *testing.T) {
 	}
 	if len(svc.records[dbID]) != 1 {
 		t.Fatalf("records count = %d after unconfirmed run, want 1", len(svc.records[dbID]))
+	}
+}
+
+func TestHandlerRejectsStaleReviewedDraft(t *testing.T) {
+	authz := newFakeAuthorizer()
+	actor, dbID := contracts.UserID("editor"), contracts.DatabaseID("db-prod")
+	authz.setGrant(actor, dbID, contracts.AccessViewEdit)
+	svc := newFakeMigrationService(authz)
+	draft, err := svc.CreateDraft(context.Background(), actor, dbID, "awal", "SELECT 1;")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := actor
+	router := setupTestMigrationHandler(t, svc, &user, false)
+	oldReview := sha256.Sum256([]byte("awal\x00SELECT 1;"))
+	if _, err := svc.UpdateDraft(context.Background(), actor, dbID, draft.Version, "baru", "SELECT 2;"); err != nil {
+		t.Fatal(err)
+	}
+	for _, reviewed := range []string{"", fmt.Sprintf("%x", oldReview)} {
+		resp := sendPostForm(router, "/databases/db-prod/migrations/1/execute", url.Values{
+			"confirm_execute": {"true"}, "reviewed_draft": {reviewed},
+		}, nil)
+		if resp.Code != http.StatusConflict || svc.records[dbID][0].Status != StatusDraft {
+			t.Fatalf("review=%q: status=%d draft=%s; want 409 and DRAFT", reviewed, resp.Code, svc.records[dbID][0].Status)
+		}
 	}
 }
 

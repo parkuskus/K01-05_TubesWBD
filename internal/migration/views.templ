@@ -175,9 +175,8 @@ templ editorContent(data EditorPageData) {
 			<span aria-hidden="true">/</span>
 			<span aria-current="page">Buat Baru</span>
 		</nav>
-		<p class="eyebrow">Database · { data.DatabaseID }</p>
-		<h1>Migration Query Editor</h1>
-		<p class="migration-lead">Susun perubahan struktur atau data dalam bentuk SQL untuk disimpan sebagai draft dan ditinjau sebelum dijalankan.</p>
+		<h1>Buat migration</h1>
+		<p class="migration-lead">Tulis SQL untuk database { data.DatabaseID }. Simpan sebagai draft untuk meninjaunya sebelum dijalankan.</p>
 		<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
 		if data.ErrorMessage != "" {
 			<p class="error-message" role="alert">{ data.ErrorMessage }</p>
@@ -270,6 +269,7 @@ templ detailContent(data DetailPageData) {
 				</form>
 				<form class="migration-execute-form" action={ templ.URL(executeMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
 					<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
+					<input type="hidden" name="reviewed_draft" value={ reviewedDraft(data.Record) }/>
 					<div class="migration-warning">
 						<p><strong>Konfirmasi Eksekusi Migration #{ formatVersion(data.Record.Version) }</strong></p>
 						<p>Target database: <strong>{ data.DatabaseID }</strong> · Judul: <strong>{ data.Record.Title }</strong></p>
@@ -279,7 +279,7 @@ templ detailContent(data DetailPageData) {
 							Saya sudah meninjau query SQL dan memahami dampaknya pada database target
 						</label>
 					</div>
-					<button type="submit">Eksekusi Migration (Transaction)</button>
+					<button type="submit">Jalankan migration</button>
 				</form>
 			</section>
 		}

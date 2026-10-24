@@ -125,9 +125,16 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	if updated1.Title != "buat tabel buku dan isi data awal" || !strings.Contains(updated1.SQLText, "Clean Code") {
 		t.Fatalf("updated1 = %+v, want updated title and SQL", updated1)
 	}
+	if _, err := svc.ExecuteMigration(ctx, editorUser, targetDB, 1, reviewedDraft(draft1)); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale draft executed: %v", err)
+	}
+	var prematureTable sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT to_regclass('books')::text`).Scan(&prematureTable); err != nil || prematureTable.Valid {
+		t.Fatalf("stale draft changed target: table=%v, err=%v", prematureTable, err)
+	}
 
 	fixedNow = fixedNow.Add(time.Minute)
-	applied1, err := svc.ExecuteMigration(ctx, editorUser, targetDB, 1)
+	applied1, err := svc.ExecuteMigration(ctx, editorUser, targetDB, 1, reviewedDraft(updated1))
 	if err != nil {
 		t.Fatalf("ExecuteMigration(1) error = %v", err)
 	}
@@ -139,7 +146,7 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	if _, err := svc.UpdateDraft(ctx, editorUser, targetDB, 1, "ubah lagi", "SELECT 1;"); !errors.Is(err, ErrMigrationAlreadyApplied) {
 		t.Fatalf("UpdateDraft() after execution error = %v, want ErrMigrationAlreadyApplied", err)
 	}
-	if _, err := svc.ExecuteMigration(ctx, editorUser, targetDB, 1); !errors.Is(err, ErrMigrationAlreadyApplied) {
+	if _, err := svc.ExecuteMigration(ctx, editorUser, targetDB, 1, reviewedDraft(updated1)); !errors.Is(err, ErrMigrationAlreadyApplied) {
 		t.Fatalf("ExecuteMigration() second time error = %v, want ErrMigrationAlreadyApplied", err)
 	}
 
@@ -201,7 +208,7 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	}
 
 	fixedNow = fixedNow.Add(time.Minute)
-	failed4, execErr4 := svc.ExecuteMigration(ctx, editorUser, targetDB, 4)
+	failed4, execErr4 := svc.ExecuteMigration(ctx, editorUser, targetDB, 4, reviewedDraft(draft4))
 	if execErr4 == nil {
 		t.Fatal("ExecuteMigration(4) expected duplicate key error, got nil")
 	}

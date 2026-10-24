@@ -125,7 +125,7 @@ func TestMissingHistoryWritesDoNotInitializeExceptCreation(t *testing.T) {
 	if _, err := svc.UpdateDraft(ctx, "editor", "db-1", 1, "title", "SELECT 1"); !errors.Is(err, ErrMigrationNotFound) {
 		t.Fatalf("UpdateDraft = %v; want ErrMigrationNotFound", err)
 	}
-	if _, err := svc.ExecuteMigration(ctx, "editor", "db-1", 1); !errors.Is(err, ErrMigrationNotFound) {
+	if _, err := svc.ExecuteMigration(ctx, "editor", "db-1", 1, "reviewed"); !errors.Is(err, ErrMigrationNotFound) {
 		t.Fatalf("ExecuteMigration = %v; want ErrMigrationNotFound", err)
 	}
 	if conn.updates != 0 {
@@ -224,7 +224,7 @@ func TestServiceRejectsViewOnlyUserOnWriteAndExecute(t *testing.T) {
 	if _, err := svc.UpdateDraft(ctx, userID, dbID, 1, "ubah tabel", "CREATE TABLE t2 (id INT);"); !errors.Is(err, contracts.ErrForbidden) {
 		t.Fatalf("UpdateDraft() by view-only user error = %v, want ErrForbidden", err)
 	}
-	if _, err := svc.ExecuteMigration(ctx, userID, dbID, 1); !errors.Is(err, contracts.ErrForbidden) {
+	if _, err := svc.ExecuteMigration(ctx, userID, dbID, 1, "reviewed"); !errors.Is(err, contracts.ErrForbidden) {
 		t.Fatalf("ExecuteMigration() by view-only user error = %v, want ErrForbidden", err)
 	}
 	if _, err := svc.RunMigration(ctx, userID, dbID, "langsung jalan", "CREATE TABLE t3 (id INT);"); !errors.Is(err, contracts.ErrForbidden) {
@@ -293,7 +293,7 @@ func TestServiceInputValidation(t *testing.T) {
 	if _, err := svc.UpdateDraft(ctx, userID, dbID, 1, "judul", ""); !errors.Is(err, ErrInvalidSQL) {
 		t.Fatalf("UpdateDraft() empty SQL error = %v, want ErrInvalidSQL", err)
 	}
-	if _, err := svc.ExecuteMigration(ctx, userID, dbID, 0); !errors.Is(err, ErrInvalidVersion) {
+	if _, err := svc.ExecuteMigration(ctx, userID, dbID, 0, "reviewed"); !errors.Is(err, ErrInvalidVersion) {
 		t.Fatalf("ExecuteMigration() version 0 error = %v, want ErrInvalidVersion", err)
 	}
 	if _, err := svc.RunMigration(ctx, userID, dbID, "judul", ""); !errors.Is(err, ErrInvalidSQL) {

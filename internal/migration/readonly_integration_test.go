@@ -129,7 +129,7 @@ func TestPostgresStaleDraftFailureCannotOverwriteApplied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ExecuteDraft(ctx, draft.Version, "editor", time.Now()); err != nil {
+	if _, err := store.ExecuteDraft(ctx, draft.Version, "editor", time.Now(), reviewedDraft(draft)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.markDraftFailed(ctx, draft.Version, "late-failure", "stale SQL error", time.Now()); !errors.Is(err, ErrMigrationAlreadyApplied) {
