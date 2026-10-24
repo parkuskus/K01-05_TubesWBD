@@ -156,6 +156,20 @@ func (h *Handler) createMigration(w http.ResponseWriter, r *http.Request) {
 	action := strings.ToLower(strings.TrimSpace(r.PostForm.Get("action")))
 
 	if action == "run" {
+		if err := h.createAccess.RequireCreateAccess(r.Context(), userID, dbID); err != nil {
+			h.writeServiceError(w, err)
+			return
+		}
+		if r.PostForm.Get("confirm_execute") != "true" {
+			renderComponent(w, r, http.StatusBadRequest, editorPage(EditorPageData{
+				DatabaseID:   string(dbID),
+				CSRFToken:    auth.CSRFToken(r),
+				ErrorMessage: "Konfirmasi tinjauan diperlukan sebelum menjalankan migration.",
+				Title:        title,
+				SQLText:      sqlText,
+			}))
+			return
+		}
 		record, err := h.service.RunMigration(r.Context(), userID, dbID, title, sqlText)
 		if err != nil {
 			if record.Version > 0 && record.Status == StatusFailed {
@@ -164,6 +178,7 @@ func (h *Handler) createMigration(w http.ResponseWriter, r *http.Request) {
 					CSRFToken:    auth.CSRFToken(r),
 					ErrorMessage: "Eksekusi SQL gagal dan perubahan telah di-rollback.",
 					Record:       record,
+					CanEdit:      true,
 				}))
 				return
 			}
@@ -262,6 +277,31 @@ func (h *Handler) executeMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !parsePostForm(w, r) {
+		return
+	}
+
+	if err := h.createAccess.RequireCreateAccess(r.Context(), userID, dbID); err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	if r.PostForm.Get("confirm_execute") != "true" {
+		record, err := h.service.GetMigration(r.Context(), userID, dbID, version)
+		if err != nil {
+			h.writeServiceError(w, err)
+			return
+		}
+		renderComponent(w, r, http.StatusBadRequest, detailPage(DetailPageData{
+			DatabaseID:   string(dbID),
+			CSRFToken:    auth.CSRFToken(r),
+			ErrorMessage: "Konfirmasi tinjauan diperlukan sebelum menjalankan migration.",
+			Record:       record,
+			CanEdit:      true,
+		}))
+		return
+	}
+
 	record, err := h.service.ExecuteMigration(r.Context(), userID, dbID, version)
 	if err != nil {
 		if record.Version > 0 && record.Status == StatusFailed {
@@ -270,6 +310,7 @@ func (h *Handler) executeMigration(w http.ResponseWriter, r *http.Request) {
 				CSRFToken:    auth.CSRFToken(r),
 				ErrorMessage: "Eksekusi SQL gagal dan perubahan telah di-rollback.",
 				Record:       record,
+				CanEdit:      true,
 			}))
 			return
 		}

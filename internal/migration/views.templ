@@ -60,68 +60,68 @@ templ historyPage(data HistoryPageData) {
 }
 
 templ historyContent(data HistoryPageData) {
-			<section class="migration-shell">
-				<p class="eyebrow">Database · { data.DatabaseID }</p>
-				<header class="migration-header">
-					<h1>Riwayat Migration</h1>
-					if data.CanEdit {
-						<a class="migration-link-button" href={ templ.URL(newMigrationURL(data.DatabaseID)) }>Buat Migration Baru</a>
+	<section class="migration-shell">
+		<p class="eyebrow">Database · { data.DatabaseID }</p>
+		<header class="migration-header">
+			<h1>Riwayat Migration</h1>
+			if data.CanEdit {
+				<a class="migration-link-button" href={ templ.URL(newMigrationURL(data.DatabaseID)) }>Buat Migration Baru</a>
+			}
+		</header>
+		if data.ErrorMessage != "" {
+			<p class="error-message" role="alert">{ data.ErrorMessage }</p>
+		}
+		if len(data.Records) == 0 {
+			<p class="migration-empty">Belum ada riwayat migration pada database ini.</p>
+		} else {
+			<table class="migration-history-table">
+				<thead>
+					<tr>
+						<th>Versi</th>
+						<th>Judul</th>
+						<th>Status</th>
+						<th>Pembuat</th>
+						<th>Pelaksana</th>
+						<th>Waktu</th>
+						<th>Aksi</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, rec := range data.Records {
+						<tr>
+							<td>#{ formatVersion(rec.Version) }</td>
+							<td>
+								if rec.Title != "" {
+									{ rec.Title }
+								} else {
+									<span>Tanpa judul</span>
+								}
+							</td>
+							<td><span class={ "migration-status migration-status-" + string(rec.Status) }>{ string(rec.Status) }</span></td>
+							<td>{ string(rec.CreatedBy) }</td>
+							<td>
+								if rec.ExecutedBy != "" {
+									{ string(rec.ExecutedBy) }
+								} else {
+									<span>-</span>
+								}
+							</td>
+							<td>
+								if rec.ExecutedAt != nil {
+									{ rec.ExecutedAt.Format("2006-01-02 15:04:05 UTC") }
+								} else {
+									{ rec.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
+								}
+							</td>
+							<td>
+								<a href={ templ.URL(detailMigrationURL(data.DatabaseID, rec.Version)) }>Detail</a>
+							</td>
+						</tr>
 					}
-				</header>
-				if data.ErrorMessage != "" {
-					<p class="error-message" role="alert">{ data.ErrorMessage }</p>
-				}
-				if len(data.Records) == 0 {
-					<p class="migration-empty">Belum ada riwayat migration pada database ini.</p>
-				} else {
-					<table class="migration-history-table">
-						<thead>
-							<tr>
-								<th>Versi</th>
-								<th>Judul</th>
-								<th>Status</th>
-								<th>Pembuat</th>
-								<th>Pelaksana</th>
-								<th>Waktu</th>
-								<th>Aksi</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, rec := range data.Records {
-								<tr>
-									<td>#{ formatVersion(rec.Version) }</td>
-									<td>
-										if rec.Title != "" {
-											{ rec.Title }
-										} else {
-											<span>Tanpa judul</span>
-										}
-									</td>
-									<td><span class={ "migration-status migration-status-" + string(rec.Status) }>{ string(rec.Status) }</span></td>
-									<td>{ string(rec.CreatedBy) }</td>
-									<td>
-										if rec.ExecutedBy != "" {
-											{ string(rec.ExecutedBy) }
-										} else {
-											<span>-</span>
-										}
-									</td>
-									<td>
-										if rec.ExecutedAt != nil {
-											{ rec.ExecutedAt.Format("2006-01-02 15:04:05 UTC") }
-										} else {
-											{ rec.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
-										}
-									</td>
-									<td>
-										<a href={ templ.URL(detailMigrationURL(data.DatabaseID, rec.Version)) }>Detail</a>
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				}
-			</section>
+				</tbody>
+			</table>
+		}
+	</section>
 }
 
 templ editorPage(data EditorPageData) {
@@ -129,29 +129,36 @@ templ editorPage(data EditorPageData) {
 }
 
 templ editorContent(data EditorPageData) {
-			<section class="migration-shell">
-				<p class="eyebrow">Database · { data.DatabaseID }</p>
-				<h1>Migration Query Editor</h1>
-				<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
-				if data.ErrorMessage != "" {
-					<p class="error-message" role="alert">{ data.ErrorMessage }</p>
-				}
-				<form class="migration-editor-form" action={ templ.URL(historyURL(data.DatabaseID)) } method="post">
-					<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
-					<div class="form-field">
-						<label for="title">Judul / Deskripsi Migration</label>
-						<input id="title" name="title" type="text" value={ data.Title } placeholder="Contoh: buat tabel users"/>
-					</div>
-					<div class="form-field">
-						<label for="sql_text">Query SQL Migration</label>
-						<textarea id="sql_text" name="sql_text" rows="10" required>{ data.SQLText }</textarea>
-					</div>
-					<div class="migration-actions">
-						<button type="submit" name="action" value="draft">Simpan Draft</button>
-						<button type="submit" name="action" value="run">Jalankan Langsung</button>
-					</div>
-				</form>
-			</section>
+	<section class="migration-shell">
+		<p class="eyebrow">Database · { data.DatabaseID }</p>
+		<h1>Migration Query Editor</h1>
+		<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
+		if data.ErrorMessage != "" {
+			<p class="error-message" role="alert">{ data.ErrorMessage }</p>
+		}
+		<form class="migration-editor-form" action={ templ.URL(historyURL(data.DatabaseID)) } method="post">
+			<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
+			<div class="form-field">
+				<label for="title">Judul / Deskripsi Migration</label>
+				<input id="title" name="title" type="text" value={ data.Title } placeholder="Contoh: buat tabel users"/>
+			</div>
+			<div class="form-field">
+				<label for="sql_text">Query SQL Migration</label>
+				<textarea id="sql_text" name="sql_text" rows="10" required>{ data.SQLText }</textarea>
+			</div>
+			<div class="migration-warning">
+				<p><strong>Tinjau sebelum eksekusi:</strong> Simpan sebagai draft terlebih dahulu untuk meninjau SQL pada halaman detail, atau centang konfirmasi di bawah bila ingin langsung mengeksekusi ke database <strong>{ data.DatabaseID }</strong>.</p>
+				<label class="migration-confirm-label" for="confirm_execute">
+					<input id="confirm_execute" type="checkbox" name="confirm_execute" value="true"/>
+					Saya sudah meninjau query SQL dan memahami dampaknya pada database target
+				</label>
+			</div>
+			<div class="migration-actions">
+				<button type="submit" name="action" value="draft">Simpan Draft untuk Ditinjau</button>
+				<button type="submit" name="action" value="run">Jalankan Setelah Konfirmasi</button>
+			</div>
+		</form>
+	</section>
 }
 
 templ detailPage(data DetailPageData) {
@@ -159,52 +166,60 @@ templ detailPage(data DetailPageData) {
 }
 
 templ detailContent(data DetailPageData) {
-			<section class="migration-shell">
-				<p class="eyebrow">Database · { data.DatabaseID }</p>
-				<h1>Migration #{ formatVersion(data.Record.Version) }</h1>
-				<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
-				if data.ErrorMessage != "" {
-					<p class="error-message" role="alert">{ data.ErrorMessage }</p>
-				}
-				<section class="migration-metadata">
-					<p><strong>Judul:</strong> { data.Record.Title }</p>
-					<p><strong>Status:</strong> <span class={ "migration-status migration-status-" + string(data.Record.Status) }>{ string(data.Record.Status) }</span></p>
-					<p><strong>Dibuat oleh:</strong> { string(data.Record.CreatedBy) } ({ data.Record.CreatedAt.Format("2006-01-02 15:04:05 UTC") })</p>
-					if data.Record.ExecutedBy != "" {
-						<p><strong>Dieksekusi oleh:</strong> { string(data.Record.ExecutedBy) }</p>
-					}
-					if data.Record.ExecutedAt != nil {
-						<p><strong>Waktu eksekusi:</strong> { data.Record.ExecutedAt.Format("2006-01-02 15:04:05 UTC") }</p>
-					}
-					if data.Record.ErrorMessage != "" {
-						<p class="error-message" role="alert"><strong>Error Eksekusi:</strong> Eksekusi SQL gagal.</p>
-					}
-				</section>
-				<section class="migration-sql-section">
-					<h2>SQL Migration</h2>
-					<pre class="migration-sql-preview"><code>{ data.Record.SQLText }</code></pre>
-				</section>
-				if data.Record.Status == StatusDraft && data.CanEdit {
-					<section class="migration-draft-controls">
-						<h2>Ubah Draft SQL</h2>
-						<form class="migration-editor-form" action={ templ.URL(editMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
-							<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
-							<div class="form-field">
-								<label for="title">Judul / Deskripsi Migration</label>
-								<input id="title" name="title" type="text" value={ data.Record.Title }/>
-							</div>
-							<div class="form-field">
-								<label for="sql_text">Query SQL Migration</label>
-								<textarea id="sql_text" name="sql_text" rows="8" required>{ data.Record.SQLText }</textarea>
-							</div>
-							<button type="submit">Simpan Perubahan Draft</button>
-						</form>
-						<form class="migration-execute-form" action={ templ.URL(executeMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
-							<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
-							<button type="submit">Eksekusi Migration (Transaction)</button>
-						</form>
-					</section>
-				}
+	<section class="migration-shell">
+		<p class="eyebrow">Database · { data.DatabaseID }</p>
+		<h1>Migration #{ formatVersion(data.Record.Version) }</h1>
+		<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
+		if data.ErrorMessage != "" {
+			<p class="error-message" role="alert">{ data.ErrorMessage }</p>
+		}
+		<section class="migration-metadata">
+			<p><strong>Judul:</strong> { data.Record.Title }</p>
+			<p><strong>Status:</strong> <span class={ "migration-status migration-status-" + string(data.Record.Status) }>{ string(data.Record.Status) }</span></p>
+			<p><strong>Dibuat oleh:</strong> { string(data.Record.CreatedBy) } ({ data.Record.CreatedAt.Format("2006-01-02 15:04:05 UTC") })</p>
+			if data.Record.ExecutedBy != "" {
+				<p><strong>Dieksekusi oleh:</strong> { string(data.Record.ExecutedBy) }</p>
+			}
+			if data.Record.ExecutedAt != nil {
+				<p><strong>Waktu eksekusi:</strong> { data.Record.ExecutedAt.Format("2006-01-02 15:04:05 UTC") }</p>
+			}
+			if data.Record.ErrorMessage != "" {
+				<p class="error-message" role="alert"><strong>Error Eksekusi:</strong> Eksekusi SQL gagal.</p>
+			}
+		</section>
+		<section class="migration-sql-section">
+			<h2>SQL Migration</h2>
+			<pre class="migration-sql-preview"><code>{ data.Record.SQLText }</code></pre>
+		</section>
+		if data.Record.Status == StatusDraft && data.CanEdit {
+			<section class="migration-draft-controls">
+				<h2>Ubah Draft SQL</h2>
+				<form class="migration-editor-form" action={ templ.URL(editMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
+					<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
+					<div class="form-field">
+						<label for="title">Judul / Deskripsi Migration</label>
+						<input id="title" name="title" type="text" value={ data.Record.Title }/>
+					</div>
+					<div class="form-field">
+						<label for="sql_text">Query SQL Migration</label>
+						<textarea id="sql_text" name="sql_text" rows="8" required>{ data.Record.SQLText }</textarea>
+					</div>
+					<button type="submit">Simpan Perubahan Draft</button>
+				</form>
+				<form class="migration-execute-form" action={ templ.URL(executeMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
+					<input type="hidden" name="gorilla.csrf.Token" value={ data.CSRFToken }/>
+					<div class="migration-warning">
+						<p><strong>Konfirmasi Eksekusi Migration #{ formatVersion(data.Record.Version) }</strong></p>
+						<p>Target database: <strong>{ data.DatabaseID }</strong> · Judul: <strong>{ data.Record.Title }</strong></p>
+						<p>Perubahan struktur atau data akan dijalankan di dalam transaksi PostgreSQL dan mungkin sulit dibatalkan setelah di-commit.</p>
+						<label class="migration-confirm-label" for="confirm_execute">
+							<input id="confirm_execute" type="checkbox" name="confirm_execute" value="true" required/>
+							Saya sudah meninjau query SQL dan memahami dampaknya pada database target
+						</label>
+					</div>
+					<button type="submit">Eksekusi Migration (Transaction)</button>
+				</form>
 			</section>
+		}
+	</section>
 }
-
