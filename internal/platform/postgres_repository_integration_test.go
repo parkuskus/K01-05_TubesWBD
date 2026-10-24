@@ -603,3 +603,105 @@ func TestGroupDeleteRemovesMembershipOnly(t *testing.T) {
 		t.Fatalf("group deletion affected unrelated data: members=%d users=%d sessions=%d", members, users, sessions)
 	}
 }
+
+func TestGrantForeignKeysEffectiveAccessAndRevocation(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	member, err := s.CreateUser(ctx, admin, "member", "member-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readers, err := s.CreateGroup(ctx, admin, "Readers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	editors, err := s.CreateGroup(ctx, admin, "Editors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, member, readers, true); err != nil {
+		t.Fatal(err)
+	}
+
+	var connID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO database_connections (name, host, port, database_name, username, ssl_mode, password_ciphertext) VALUES ('Target 1', 'localhost', 5432, 'target_db', 'postgres', 'disable', $1) RETURNING id`, bytes.Repeat([]byte{1}, 32)).Scan(&connID); err != nil {
+		t.Fatal(err)
+	}
+	dbID := contracts.DatabaseID("1")
+	if connID != 1 {
+		t.Fatalf("unexpected connection id %d", connID)
+	}
+
+	// Non-admin cannot manage grants; missing group or missing database connection returns ErrNotFound.
+	if err := s.SetGrant(ctx, member, readers, dbID, contracts.AccessViewOnly); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("non-admin SetGrant: %v", err)
+	}
+	if err := s.SetGrant(ctx, admin, "999999", dbID, contracts.AccessViewOnly); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("missing group SetGrant: %v", err)
+	}
+	if err := s.SetGrant(ctx, admin, readers, "999999", contracts.AccessViewOnly); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("missing database SetGrant: %v", err)
+	}
+
+	// Set View Only grant on Readers group.
+	if err := s.SetGrant(ctx, admin, readers, dbID, contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := s.ListGrants(ctx, admin, readers)
+	if err != nil || len(grants) != 1 || grants[0].DatabaseID != dbID || grants[0].Level != contracts.AccessViewOnly {
+		t.Fatalf("unexpected grants: %+v, %v", grants, err)
+	}
+
+	// Platform Admin without group membership does not receive implicit database access.
+	if err := s.RequireDatabaseAccess(ctx, admin, dbID, contracts.ActionViewSchema); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("admin without grant got access: %v", err)
+	}
+
+	// Member in Readers has View Only, not View + Edit.
+	if err := s.RequireDatabaseAccess(ctx, member, dbID, contracts.ActionViewSchema); err != nil {
+		t.Fatalf("member view schema: %v", err)
+	}
+	if err := s.RequireDatabaseAccess(ctx, member, dbID, contracts.ActionRunMigration); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("view-only member allowed to run migration: %v", err)
+	}
+
+	// Adding member to Editors with View + Edit elevates effective access (strongest grant wins).
+	if err := s.SetMembership(ctx, admin, member, editors, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetGrant(ctx, admin, editors, dbID, contracts.AccessViewEdit); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequireDatabaseAccess(ctx, member, dbID, contracts.ActionRunMigration); err != nil {
+		t.Fatalf("view-edit member denied run migration: %v", err)
+	}
+
+	// Revoking Editors grant via AccessNone immediately downgrades access on next check.
+	if err := s.SetGrant(ctx, admin, editors, dbID, contracts.AccessNone); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequireDatabaseAccess(ctx, member, dbID, contracts.ActionRunMigration); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("revoked edit grant still allowed run migration: %v", err)
+	}
+	if err := s.RequireDatabaseAccess(ctx, member, dbID, contracts.ActionViewData); err != nil {
+		t.Fatalf("remaining view grant denied view data: %v", err)
+	}
+
+	// Deleting connection cascades grant rows cleanly.
+	if _, err := db.ExecContext(ctx, `DELETE FROM database_connections WHERE id = $1`, connID); err != nil {
+		t.Fatal(err)
+	}
+	var remaining int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM group_database_access`).Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatalf("orphan grants after connection delete: %d, %v", remaining, err)
+	}
+}
