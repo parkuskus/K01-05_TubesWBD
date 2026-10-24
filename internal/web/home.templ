@@ -1,24 +1,41 @@
 package web
 
-templ home(csrfToken string) {
-	<!DOCTYPE html>
-	<html lang="id">
-		<head>
-			<meta charset="UTF-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>Database Management Platform</title>
-			<link rel="stylesheet" href="/static/styles.css"/>
-		</head>
-		<body>
-			<main>
+import "if3110.local/db-platform/internal/ui"
+
+templ home(csrfToken string, isAdmin bool) {
+	@ui.Layout("Database Management Platform", homeContent(csrfToken, isAdmin))
+}
+
+templ homeContent(csrfToken string, isAdmin bool) {
+	<section class="home-shell">
+		<header class="home-header">
+			<div>
 				<p class="eyebrow">IF3110 · Milestone 1</p>
 				<h1>Database Management Platform</h1>
-				<p>Anda sudah masuk ke platform.</p>
-				<form class="logout-form" action="/logout" method="post">
-					<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
-					<button type="submit">Keluar</button>
-				</form>
-			</main>
-		</body>
-	</html>
+				<p class="home-lead">Pilih database untuk melihat schema, tabel, dan data, atau meninjau perubahan migration SQL sesuai hak akses grup Anda.</p>
+			</div>
+			<form class="logout-form" action="/logout" method="post">
+				<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+				<button type="submit">Keluar</button>
+			</form>
+		</header>
+		<section class="home-card" aria-label="Eksplorasi database">
+			<h2>Database Target</h2>
+			<p>Lihat daftar database PostgreSQL yang dapat diakses oleh grup Anda, telusuri struktur tabel, data, serta riwayat migration.</p>
+			<div class="home-actions">
+				<a class="home-button" href="/databases/">Pilih database</a>
+			</div>
+		</section>
+		if isAdmin {
+			<section class="home-card" aria-label="Administrasi platform">
+				<h2>Administrasi Platform</h2>
+				<p>Kelola akun pengguna, grup, koneksi PostgreSQL terdaftar, dan pemberian akses grup. Status Platform Admin tidak otomatis memberi akses ke isi database target.</p>
+				<nav class="home-actions" aria-label="Pintasan administrasi">
+					<a class="home-link" href="/platform/users">Pengguna</a>
+					<a class="home-link" href="/platform/groups">Grup &amp; akses</a>
+					<a class="home-link" href="/databases/connections/">Koneksi database</a>
+				</nav>
+			</section>
+		}
+	</section>
 }

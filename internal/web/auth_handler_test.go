@@ -62,7 +62,11 @@ func (s *fakeSessions) RequireSession(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		userID := s.createdFor
+		if userID == "" {
+			userID = "42"
+		}
+		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), userID)))
 	})
 }
 

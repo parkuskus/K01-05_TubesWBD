@@ -1,8 +1,18 @@
 :root {
 	color-scheme: light;
-	font-family: system-ui, sans-serif;
-	color: #20242b;
-	background: #f5f6f8;
+	--color-bg: #F6F7F5;
+	--color-surface: #FFFFFF;
+	--color-border: #D5DEDA;
+	--color-text: #1D2B29;
+	--color-text-muted: #485C58;
+	--color-primary: #176B5B;
+	--color-primary-hover: #0F4F43;
+	--color-success: #146B43;
+	--color-warning: #8A5600;
+	--color-danger: #A12D32;
+	font-family: 'Inter', system-ui, -apple-system, sans-serif;
+	color: var(--color-text);
+	background: var(--color-bg);
 }
 
 body {
@@ -10,15 +20,29 @@ body {
 	min-height: 100vh;
 	display: grid;
 	place-items: center;
+	background: var(--color-bg);
+	color: var(--color-text);
+}
+
+body:has(main > .home-shell) {
+	display: block;
 }
 
 main {
-	max-width: 42rem;
-	padding: 3rem;
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 48rem;
+	padding: clamp(1.25rem, 4vw, 3rem);
+}
+
+main:has(> .home-shell) {
+	max-width: 64rem;
+	margin: 0 auto;
 }
 
 .eyebrow {
-	color: #5c6675;
+	margin: 0 0 0.35rem;
+	color: var(--color-text-muted);
 	font-size: 0.8rem;
 	font-weight: 700;
 	letter-spacing: 0.08em;
@@ -28,13 +52,16 @@ main {
 .auth-shell {
 	box-sizing: border-box;
 	width: min(100% - 2rem, 28rem);
-	padding: clamp(1.25rem, 5vw, 3rem);
+	padding: clamp(1.25rem, 5vw, 2.5rem);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
 }
 
 .auth-form {
 	display: grid;
 	gap: 1.25rem;
-	margin-top: 2rem;
+	margin-top: 1.5rem;
 }
 
 .form-field {
@@ -52,42 +79,117 @@ main {
 	min-height: 2.75rem;
 	padding: 0.65rem 0.75rem;
 	border: 1px solid #8c96a5;
-	border-radius: 0.25rem;
-	background: #fff;
-	color: #20242b;
+	border-radius: 0.35rem;
+	background: var(--color-surface);
+	color: var(--color-text);
 	font: inherit;
 }
 
-.form-field input:focus-visible,
-button:focus-visible {
-	outline: 3px solid #234a7d;
+:is(a, button, input, select, textarea):focus-visible {
+	outline: 3px solid var(--color-primary);
 	outline-offset: 2px;
 }
 
 .auth-form button,
-.logout-form button {
+.logout-form button,
+.home-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
 	min-height: 2.75rem;
-	padding: 0.65rem 1rem;
+	padding: 0.65rem 1.1rem;
 	border: 0;
-	border-radius: 0.25rem;
-	background: #20242b;
+	border-radius: 0.35rem;
+	background: var(--color-primary);
 	color: #fff;
 	font: inherit;
 	font-weight: 650;
+	text-decoration: none;
 	cursor: pointer;
 }
 
 .auth-form button:hover,
-.logout-form button:hover {
-	background: #394352;
+.logout-form button:hover,
+.home-button:hover {
+	background: var(--color-primary-hover);
 }
 
 .error-message {
 	margin-top: 1.25rem;
-	color: #9b1c1c;
+	color: var(--color-danger);
 	font-weight: 600;
 }
 
+.home-shell {
+	display: grid;
+	gap: 1.5rem;
+	line-height: 1.55;
+}
+
+.home-header {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 1rem;
+	padding-bottom: 1rem;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.home-header h1 {
+	margin: 0;
+	font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+}
+
+.home-lead {
+	margin: 0.5rem 0 0;
+	max-width: 65ch;
+	color: var(--color-text-muted);
+}
+
+.home-card {
+	box-sizing: border-box;
+	padding: clamp(1rem, 2.5vw, 1.5rem);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
+	display: grid;
+	gap: 0.75rem;
+}
+
+.home-card h2,
+.home-card p {
+	margin: 0;
+}
+
+.home-card p {
+	color: var(--color-text-muted);
+	max-width: 65ch;
+}
+
+.home-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem 1.25rem;
+	margin-top: 0.25rem;
+}
+
+.home-link {
+	display: inline-flex;
+	align-items: center;
+	min-height: 2.75rem;
+	color: var(--color-primary);
+	font-weight: 600;
+	text-underline-offset: 0.2em;
+}
+
+.home-link:hover {
+	color: var(--color-primary-hover);
+	text-decoration-thickness: 2px;
+}
+
 .logout-form {
-	margin-top: 2rem;
+	margin: 0;
 }

@@ -12,6 +12,9 @@ import (
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/config"
+	"if3110.local/db-platform/internal/database"
+	"if3110.local/db-platform/internal/migration"
+	"if3110.local/db-platform/internal/platform"
 	"if3110.local/db-platform/internal/web"
 )
 
@@ -48,9 +51,23 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure sessions: %w", err)
 	}
+	platformService := platform.NewService(db)
+	dbManager, err := database.NewManager(db, platformService, cfg.DatabaseCredentialKey)
+	if err != nil {
+		return fmt.Errorf("configure database manager: %w", err)
+	}
+	defer dbManager.Close()
+	migrationService, err := migration.NewService(platformService, dbManager)
+	if err != nil {
+		return fmt.Errorf("configure migration service: %w", err)
+	}
 	handler, err := web.New(web.Config{
 		Authenticator: authenticator,
 		Sessions:      sessions,
+		Authorizer:    platformService,
+		Platform:      platformService,
+		Databases:     dbManager,
+		Migrations:    migrationService,
 		CSRFKey:       cfg.CSRFKey,
 		SecureCookies: cfg.SecureCookies,
 	})
