@@ -9,47 +9,32 @@ templ login(csrfToken string, errorMessage string) {
 			<title>Masuk · Database Management Platform</title>
 			<link rel="stylesheet" href="/static/styles.css"/>
 		</head>
-		<body>
-			<main class="auth-shell">
-				<div class="auth-brand">
-					<span class="auth-logo" aria-hidden="true">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M4 5h16v14"/>
-							<path d="M8 9h9"/>
-							<path d="M8 13h9"/>
-							<path d="M8 17h6"/>
-						</svg>
-					</span>
-					<div class="auth-brand-text">
-						<span class="auth-brand-name">Teras Data Studio</span>
-						<span class="auth-brand-sub">Database Management Platform</span>
-					</div>
+		<body class="auth-body">
+			<nav class="global-nav" aria-label="Identitas platform">
+				<div class="global-nav-inner">
+					<span class="global-nav-brand">Teras Data</span>
 				</div>
-				<p class="eyebrow">IF3110 · Milestone 1</p>
-				<h1>Masuk</h1>
-				<p>Kenali database, kelola perubahan dengan tenang menggunakan akun platform Anda.</p>
-				if errorMessage != "" {
-					<p class="error-message" role="alert">{ errorMessage }</p>
-				}
-				<form class="auth-form" action="/login" method="post">
-					<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
-					<div class="form-field">
-						<label for="username">Username</label>
-						<input id="username" name="username" type="text" placeholder="Masukkan username Anda" autocomplete="username" required autofocus/>
-					</div>
-					<div class="form-field">
-						<label for="password">Password</label>
-						<input id="password" name="password" type="password" placeholder="••••••••••••" autocomplete="current-password" required/>
-					</div>
-					<button type="submit">Masuk ke Studio</button>
-				</form>
-				<div class="auth-footer">
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-						<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-						<path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-					</svg>
-					<span>Dilindungi sesi terenkripsi SHA-256, rotasi otomatis, dan token CSRF</span>
-				</div>
+			</nav>
+			<main class="auth-center">
+				<section class="auth-shell" aria-label="Formulir masuk">
+					<h1>Masuk</h1>
+					<p class="auth-lead">Masuk menggunakan akun platform Anda.</p>
+					if errorMessage != "" {
+						<p class="error-message" role="alert">{ errorMessage }</p>
+					}
+					<form class="auth-form" action="/login" method="post">
+						<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+						<div class="form-field">
+							<label for="username">Username</label>
+							<input id="username" name="username" type="text" placeholder="Username" autocomplete="username" required autofocus/>
+						</div>
+						<div class="form-field">
+							<label for="password">Password</label>
+							<input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required/>
+						</div>
+						<button type="submit">Masuk</button>
+					</form>
+				</section>
 			</main>
 		</body>
 	</html>

@@ -1,486 +1,584 @@
-/* sistem desain modul database viewer & manajemen koneksi — teras data studio */
+/* tasteskill v2 Anti-Slop Art Direction — Database Explorer, Schema Inspector, and Data Grid */
+
 body:has(main > .db-module) {
-    display: block;
-    background-color: var(--td-bg, #F3F6F5);
-    color: var(--td-text, #101D1B);
-    font-family: var(--td-font-sans, 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif);
+  background-color: #f6f5f1;
 }
 
 main:has(> .db-module) {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 78rem;
-    min-width: 0;
-    margin: 0 auto;
-    padding: clamp(1rem, 4vw, 2.5rem);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 120px;
 }
 
 .db-module {
-    width: 100%;
-    min-width: 0;
-    line-height: 1.55;
-    overflow-wrap: anywhere;
-    --db-accent: var(--td-primary, #0F6B58);
-    --db-accent-hover: var(--td-primary-hover, #0A5243);
-    --db-border: var(--td-border, #D5E0DC);
-    --db-muted: var(--td-muted, #5C726D);
-    --db-surface: var(--td-surface, #FFFFFF);
+  width: min(100% - 64px, 1280px);
+  margin: 0 auto;
+  color: #141413;
+  font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Inter", sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
 }
 
-/* navigasi atas & bar konteks */
+/* ==========================================================================
+   Plain Top Navigation Bar & Tonal Sub-Bar (No Glass, No Bar Chrome)
+   ========================================================================== */
+
 .db-nav {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 1rem;
-    padding: 0.75rem 1.15rem;
-    background: var(--db-surface);
-    border: 1px solid var(--db-border);
-    border-radius: 0.625rem;
-    box-shadow: 0 1px 2px rgba(16, 29, 27, 0.04);
-}
-
-.db-nav a,
-.db-actions a,
-.db-list a,
-.db-breadcrumb a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    color: var(--db-accent);
-    font-weight: 600;
-    text-decoration: none;
-    transition: color 0.15s ease, background-color 0.15s ease;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  padding: 16px max(32px, calc((100vw - 1280px) / 2));
+  background-color: #141413;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
 }
 
 .db-nav a {
-    padding: 0 0.65rem;
-    border-radius: 0.375rem;
+  color: #c7c4bb;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: color 120ms ease;
 }
 
-.db-nav a:hover {
-    background: var(--td-primary-subtle, #E6F4F0);
-    color: var(--db-accent-hover);
+.db-nav a:hover,
+.db-nav a[aria-current="page"] {
+  color: #faf9f5;
+  text-decoration: none;
+}
+
+.db-nav a[aria-current="page"] {
+  font-weight: 600;
 }
 
 .db-breadcrumb {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    align-items: center;
-    margin-top: 1.15rem;
-    padding: 0.35rem 0.85rem;
-    background: rgba(255, 255, 255, 0.75);
-    border: 1px solid var(--db-border);
-    border-radius: 0.5rem;
-    font-size: 0.9rem;
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    color: var(--db-muted);
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  padding: 12px max(32px, calc((100vw - 1280px) / 2));
+  background-color: #ebe8e0;
+  border-bottom: 1px solid #dcd8ce;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  font-size: 14px;
+  color: #595750;
+}
+
+.db-context-info {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.db-context-name {
+  color: #141413;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.db-breadcrumb a {
+  color: #141413;
+  text-decoration: none;
+}
+
+.db-breadcrumb a:hover {
+  color: #0f5247;
+  text-decoration: underline;
 }
 
 .db-breadcrumb [aria-current="page"] {
-    font-weight: 700;
-    color: var(--td-text, #101D1B);
+  color: #141413;
+  font-weight: 600;
 }
 
 .db-context {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.75rem 1rem;
-    margin-top: 0.85rem;
-    padding: 0.75rem 1.15rem;
-    background: var(--db-surface);
-    border: 1px solid var(--db-border);
-    border-radius: 0.625rem;
-    box-shadow: 0 1px 2px rgba(16, 29, 27, 0.03);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 32px 0;
+  padding: 18px 24px;
+  background-color: #ebe8e0;
+  border-radius: 6px;
 }
 
-.db-context .db-actions {
-    margin: 0;
-}
+/* ==========================================================================
+   Headlines & Body Copy (Full Ink, Large Scale)
+   ========================================================================== */
 
-/* tipografi judul & deskripsi */
 .db-module h1 {
-    margin: 1.35rem 0 0.4rem;
-    font-size: clamp(1.65rem, 3vw, 2.15rem);
-    font-weight: 800;
-    letter-spacing: -0.025em;
-    color: var(--td-text, #101D1B);
+  margin: 48px 0 16px;
+  color: #141413;
+  font-size: clamp(36px, 4.2vw, 52px);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
 }
 
 .db-module h2 {
-    margin: 2rem 0 0.75rem;
-    font-size: 1.15rem;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    color: var(--td-text, #101D1B);
+  margin: 48px 0 16px;
+  color: #141413;
+  font-size: clamp(22px, 2.2vw, 28px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
 }
 
-.db-module > p {
-    margin: 0 0 1.25rem;
-    max-width: 68ch;
-    color: var(--td-text-secondary, #3B4F4B);
+.db-module p {
+  max-width: 66ch;
+  margin: 0 0 24px;
+  color: #141413;
+  font-size: 17px;
+  line-height: 1.5;
 }
 
-.db-module code {
-    padding: 0.15rem 0.4rem;
-    border-radius: 0.25rem;
-    background: var(--td-bg, #F3F6F5);
-    border: 1px solid var(--db-border);
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    font-size: 0.875em;
+.db-module > a:not(.db-button) {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 24px;
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background-color: #ebe8e0;
+  color: #141413;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-/* tombol & aksi */
+.db-module > a:not(.db-button):hover {
+  background-color: #141413;
+  color: #faf9f5;
+  text-decoration: none;
+}
+
+/* ==========================================================================
+   Action Groups & Buttons (Obsidian Primary, Warm Stone Secondary)
+   ========================================================================== */
+
 .db-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
-    margin: 1rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
-.db-module td .db-actions {
-    margin: 0;
+.db-button,
+.db-form button,
+.db-module form button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 22px;
+  border: 0;
+  border-radius: 9999px;
+  background-color: #141413;
+  color: #faf9f5;
+  font-family: "SF Pro Text", -apple-system, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.db-module > .db-button {
+  margin-bottom: 28px;
+}
+
+.db-button:hover,
+.db-form button:hover,
+.db-module form button:hover {
+  background-color: #0f5247;
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.db-button:active,
+.db-form button:active,
+.db-module form button:active,
+.db-actions a:active {
+  transform: scale(0.97);
+}
+
+button.db-danger {
+  background-color: #8f2424;
+  color: #ffffff;
 }
 
 .db-actions a:not(.db-button) {
-    padding: 0.45rem 0.85rem;
-    border-radius: 0.375rem;
-    background: var(--db-surface);
-    border: 1px solid var(--td-border-strong, #B3C5BE);
-    color: var(--td-text, #101D1B);
-    font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  color: #141413;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.db-context .db-actions a:not(.db-button) {
+  background-color: #ffffff;
+}
+
+.db-module table .db-actions a:not(.db-button) {
+  background-color: #ebe8e0;
 }
 
 .db-actions a:not(.db-button):hover {
-    background: var(--td-primary-subtle, #E6F4F0);
-    border-color: var(--db-accent);
-    color: var(--db-accent);
+  background-color: #141413;
+  color: #faf9f5;
+  text-decoration: none;
 }
 
-.db-module .db-button,
-.db-module button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    min-height: 44px;
-    padding: 0.6rem 1.15rem;
-    border: 1px solid transparent;
-    border-radius: 0.375rem;
-    background: linear-gradient(180deg, #137A65 0%, var(--db-accent) 100%);
-    color: #FFFFFF;
-    font: inherit;
-    font-size: 0.925rem;
-    font-weight: 650;
-    text-decoration: none;
-    cursor: pointer;
-    box-shadow: 0 1px 2px rgba(15, 107, 88, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-    transition: background 0.15s ease, box-shadow 0.15s ease;
+.db-actions > span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  color: #595750;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.db-module .db-button:hover,
-.db-module button:hover {
-    background: linear-gradient(180deg, var(--db-accent) 0%, var(--db-accent-hover) 100%);
-    color: #FFFFFF;
-}
-
-.db-module .db-danger {
-    background: linear-gradient(180deg, #B82B32 0%, var(--td-danger, #A6262C) 100%);
-    box-shadow: 0 1px 2px rgba(166, 38, 44, 0.25);
-}
-
-.db-module .db-danger:hover {
-    background: var(--td-danger-hover, #821B20);
-}
-
-/* badge akses */
 .db-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border: 1px solid #AEE0C6;
-    border-radius: 999px;
-    padding: 0.22rem 0.7rem;
-    font-size: 0.8rem;
-    font-weight: 650;
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    color: var(--td-success, #116941);
-    background: var(--td-success-bg, #E6F6EE);
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background-color: #dfece7;
+  color: #0f5247;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
-/* form konfigurasi koneksi */
+/* ==========================================================================
+   Object Index List (Databases, Schemas, Tables)
+   ========================================================================== */
+
+.db-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 0;
+  margin: 0 0 40px;
+  list-style: none;
+}
+
+.db-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 22px 24px;
+  background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-radius: 6px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.db-list li:hover {
+  background-color: #ebe8e0;
+  border-color: #141413;
+}
+
+.db-list li a {
+  color: #141413;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.db-list li small {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background-color: #ebe8e0;
+  color: #595750;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Forms
+   ========================================================================== */
+
 .db-form {
-    display: grid;
-    gap: 0.55rem;
-    max-width: 40rem;
-    margin-top: 1.25rem;
-    padding: clamp(1.25rem, 3vw, 1.85rem);
-    background: var(--db-surface);
-    border: 1px solid var(--db-border);
-    border-radius: 0.75rem;
-    box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05), 0 4px 12px -2px rgba(16, 29, 27, 0.04);
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+  margin: 0 0 40px;
+  padding: 32px;
+  background-color: #ebe8e0;
+  border-radius: 6px;
 }
 
 .db-form label {
-    margin-top: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 650;
-    color: var(--td-text, #101D1B);
+  margin-top: 12px;
+  color: #141413;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.db-form label:first-of-type {
+  margin-top: 0;
 }
 
 .db-form input,
 .db-form select {
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    min-height: 44px;
-    padding: 0.6rem 0.8rem;
-    border: 1px solid var(--td-border-strong, #B3C5BE);
-    border-radius: 0.375rem;
-    background: var(--db-surface);
-    color: var(--td-text, #101D1B);
-    font: inherit;
-    font-size: 0.95rem;
-    box-shadow: 0 1px 2px rgba(16, 29, 27, 0.03);
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #cfcac0;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #141413;
+  font-size: 16px;
 }
 
-.db-form small,
-.db-list small {
-    color: var(--db-muted);
-    font-size: 0.825rem;
+.db-form input:focus,
+.db-form select:focus {
+  border-color: #141413;
 }
 
-.db-form .db-field-error {
-    color: var(--td-danger, #A6262C);
-    font-weight: 600;
+.db-form input[aria-invalid="true"],
+.db-form select[aria-invalid="true"] {
+  border-color: #8f2424;
+  background-color: #f7efef;
+}
+
+.db-form small {
+  color: #595750;
+  font-size: 13px;
+  line-height: 1.38;
+}
+
+.db-field-error {
+  color: #8f2424 !important;
+  font-weight: 600;
 }
 
 .db-field-error:empty {
-    display: none;
+  display: none;
 }
 
-.db-form [aria-invalid="true"] {
-    border: 2px solid var(--td-danger, #A6262C);
-    background: #FFFDFD;
+.db-form .db-actions {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #d4d0c5;
 }
 
-.db-form > *,
-.db-list li > * {
-    min-width: 0;
-}
+/* ==========================================================================
+   Data Grid & Structure Tables (Sentence Case Headers, Tabular Figures)
+   ========================================================================== */
 
-.db-module :focus-visible {
-    outline: 3px solid var(--db-accent);
-    outline-offset: 2px;
-}
-
-/* tabel data, kolom, dan koneksi */
 .db-scroll {
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow-x: auto;
-    margin: 1.25rem 0;
-    border: 1px solid var(--db-border);
-    border-radius: 0.625rem;
-    background: var(--db-surface);
-    box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05);
+  width: 100%;
+  overflow-x: auto;
+  margin: 0 0 28px;
+  background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-radius: 6px;
 }
 
 .db-module table {
-    width: 100%;
-    min-width: 40rem;
-    border-collapse: collapse;
-    text-align: left;
-    font-size: 0.925rem;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
 }
 
 .db-module caption {
-    padding: 0.75rem 1rem;
-    text-align: left;
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: var(--db-muted);
-    background: #F6F9F8;
-    border-bottom: 1px solid var(--db-border);
+  padding: 15px 22px;
+  background-color: #f1efe9;
+  border-bottom: 1px solid #dcd8ce;
+  color: #595750;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
 }
 
-.db-module thead {
-    background: #F3F7F5;
+.db-module thead th {
+  padding: 15px 22px;
+  background-color: #ebe8e0;
+  color: #141413;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid #dcd8ce;
+  border-right: 1px solid #e2dfd6;
+  white-space: nowrap;
 }
 
-.db-module th {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--db-border);
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--td-text-secondary, #3B4F4B);
-    overflow-wrap: anywhere;
+.db-module thead th:last-child {
+  border-right: 0;
+}
+
+.db-module tbody th,
+.db-module tbody td {
+  padding: 16px 22px;
+  border-bottom: 1px solid #e6e3da;
+  border-right: 1px solid #efede7;
+  color: #141413;
+  text-align: left;
+  vertical-align: top;
+}
+
+.db-module tbody th:last-child,
+.db-module tbody td:last-child {
+  border-right: 0;
+}
+
+.db-module tbody tr:last-child th,
+.db-module tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .db-module tbody th {
-    font-size: 0.925rem;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--td-text, #101D1B);
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-weight: 600;
 }
 
-.db-module td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #E7EFEA;
-    vertical-align: top;
-    max-width: 30rem;
-    overflow-wrap: anywhere;
-}
-
-.db-module tbody tr:hover {
-    background: #F9FCFB;
-}
-
-.db-value {
-    white-space: pre-wrap;
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    font-size: 0.875rem;
-}
-
-.db-null {
-    display: inline-block;
-    padding: 0.1rem 0.45rem;
-    border-radius: 0.25rem;
-    background: #EEF2F0;
-    color: var(--db-muted);
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    font-size: 0.775rem;
-    font-style: normal;
-    font-weight: 600;
+.db-module tbody tr:hover th,
+.db-module tbody tr:hover td {
+  background-color: #faf9f6;
 }
 
 .db-connection-id {
-    display: block;
-    margin-top: 0.15rem;
-    font-weight: 500;
-    font-size: 0.775rem;
-    color: var(--db-muted);
+  display: block;
+  margin-top: 4px;
+  color: #595750;
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
-/* daftar database, schema, dan tabel */
-.db-list {
-    list-style: none;
-    padding: 0;
-    margin: 1rem 0;
-    display: grid;
-    gap: 0.65rem;
+.db-null {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: #ebe8e0;
+  color: #595750;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
 }
 
-.db-list li {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.75rem 1rem;
-    padding: 0.85rem 1.15rem;
-    background: var(--db-surface);
-    border: 1px solid var(--db-border);
-    border-radius: 0.625rem;
-    box-shadow: 0 1px 2px rgba(16, 29, 27, 0.03);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+.db-module code {
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
 }
 
-.db-list li:hover {
-    border-color: var(--db-accent);
-    box-shadow: 0 3px 10px -2px rgba(15, 107, 88, 0.10);
-}
-
-.db-list li a {
-    font-size: 1rem;
-    font-weight: 650;
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-}
-
-.db-list li small {
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    background: var(--td-bg, #F3F6F5);
-    border: 1px solid var(--db-border);
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    font-weight: 600;
-}
-
-/* daftar constraint & index */
+/* Constraints & Indexes Definition List */
 .db-definitions {
-    margin: 0.75rem 0 1.5rem;
-    padding: 1rem 1.25rem;
-    background: var(--db-surface);
-    border: 1px solid var(--db-border);
-    border-radius: 0.625rem;
+  display: grid;
+  gap: 12px;
+  margin: 0 0 40px;
 }
 
 .db-definitions dt {
-    font-weight: 700;
-    font-family: var(--td-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
-    margin-top: 0.85rem;
-    color: var(--td-text, #101D1B);
-}
-
-.db-definitions dt:first-child {
-    margin-top: 0;
+  padding: 16px 22px 6px;
+  background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  color: #141413;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .db-definitions dd {
-    margin: 0.35rem 0 0;
-    overflow-wrap: anywhere;
+  margin: -12px 0 0;
+  padding: 0 22px 16px;
+  background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  color: #141413;
+  overflow-x: auto;
 }
 
-/* pesan kosong, alert, dan notifikasi */
-.db-empty {
-    padding: 1.5rem;
-    background: var(--db-surface);
-    border: 1px dashed var(--td-border-strong, #B3C5BE);
-    border-radius: 0.625rem;
-    color: var(--db-muted);
+pre.db-scroll {
+  padding: 24px;
+  border: 0;
+  border-radius: 6px;
+  background-color: #141413;
+  color: #faf9f5;
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
+/* Notices, Alerts, Empty States */
+.db-notice,
 .db-alert,
+.db-empty {
+  padding: 22px 26px;
+  margin: 0 0 28px;
+  border-radius: 6px;
+  background-color: #ebe8e0;
+}
+
 .db-notice {
-    padding: 0.85rem 1.15rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    margin: 1rem 0;
+  background-color: #dfece7;
+  color: #0f5247;
+  font-weight: 600;
 }
 
 .db-alert {
-    background: var(--td-danger-bg, #FDF0F0);
-    border: 1px solid var(--td-danger-border, #F2BFC2);
-    border-left: 4px solid var(--td-danger, #A6262C);
-    color: var(--td-danger, #A6262C);
+  background-color: #f4e3e3;
+  color: #8f2424;
+  font-weight: 600;
 }
 
-.db-notice {
-    background: var(--td-success-bg, #E6F6EE);
-    border: 1px solid var(--td-success-border, #AEE0C6);
-    border-left: 4px solid var(--td-success, #116941);
-    color: var(--td-success, #116941);
+td strong.db-alert {
+  display: inline-block;
+  padding: 4px 10px;
+  margin: 0;
+  border-radius: 9999px;
+  font-size: 12px;
 }
 
-@media (max-width: 600px) {
-    .db-nav,
-    .db-actions {
-        gap: 0.5rem;
-    }
-    .db-module th,
-    .db-module td {
-        padding: 0.55rem 0.65rem;
-    }
-    .db-context {
-        flex-direction: column;
-        align-items: stretch;
-    }
+.db-empty p:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .db-module {
+    width: calc(100% - 32px);
+  }
+
+  .db-list {
+    grid-template-columns: 1fr;
+  }
+
+  .db-form {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .db-actions a,
+  .db-actions button,
+  .db-button {
+    width: 100%;
+  }
 }

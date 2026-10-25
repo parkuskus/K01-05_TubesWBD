@@ -29,7 +29,7 @@ func login(csrfToken string, errorMessage string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"id\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Masuk · Database Management Platform</title><link rel=\"stylesheet\" href=\"/static/styles.css\"></head><body><main class=\"auth-shell\"><div class=\"auth-brand\"><span class=\"auth-logo\" aria-hidden=\"true\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 5h16v14\"></path> <path d=\"M8 9h9\"></path> <path d=\"M8 13h9\"></path> <path d=\"M8 17h6\"></path></svg></span><div class=\"auth-brand-text\"><span class=\"auth-brand-name\">Teras Data Studio</span> <span class=\"auth-brand-sub\">Database Management Platform</span></div></div><p class=\"eyebrow\">IF3110 · Milestone 1</p><h1>Masuk</h1><p>Kenali database, kelola perubahan dengan tenang menggunakan akun platform Anda.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"id\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Masuk · Database Management Platform</title><link rel=\"stylesheet\" href=\"/static/styles.css\"></head><body class=\"auth-body\"><nav class=\"global-nav\" aria-label=\"Identitas platform\"><div class=\"global-nav-inner\"><span class=\"global-nav-brand\">Teras Data</span></div></nav><main class=\"auth-center\"><section class=\"auth-shell\" aria-label=\"Formulir masuk\"><h1>Masuk</h1><p class=\"auth-lead\">Masuk menggunakan akun platform Anda.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -41,7 +41,7 @@ func login(csrfToken string, errorMessage string) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(errorMessage)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 32, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 23, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -59,13 +59,13 @@ func login(csrfToken string, errorMessage string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 35, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 26, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"form-field\"><label for=\"username\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" placeholder=\"Masukkan username Anda\" autocomplete=\"username\" required autofocus></div><div class=\"form-field\"><label for=\"password\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" placeholder=\"••••••••••••\" autocomplete=\"current-password\" required></div><button type=\"submit\">Masuk ke Studio</button></form><div class=\"auth-footer\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"></rect> <path d=\"M7 11V7a5 5 0 0 1 10 0v4\"></path></svg> <span>Dilindungi sesi terenkripsi SHA-256, rotasi otomatis, dan token CSRF</span></div></main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"form-field\"><label for=\"username\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" placeholder=\"Username\" autocomplete=\"username\" required autofocus></div><div class=\"form-field\"><label for=\"password\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" placeholder=\"Password\" autocomplete=\"current-password\" required></div><button type=\"submit\">Masuk</button></form></section></main></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

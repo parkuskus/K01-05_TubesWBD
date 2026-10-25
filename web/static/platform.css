@@ -1,678 +1,739 @@
-/* sistem desain modul administrasi platform & migration studio — teras data */
-:root {
-  --td-bg: #F3F6F5;
-  --td-surface: #FFFFFF;
-  --td-border: #D5E0DC;
-  --td-border-strong: #B3C5BE;
-  --td-text: #101D1B;
-  --td-text-secondary: #3B4F4B;
-  --td-muted: #5C726D;
-  --td-primary: #0F6B58;
-  --td-primary-hover: #0A5243;
-  --td-primary-subtle: #E6F4F0;
-  --td-success: #116941;
-  --td-success-bg: #E6F6EE;
-  --td-warning: #8A5200;
-  --td-warning-bg: #FFF7E6;
-  --td-danger: #A6262C;
-  --td-danger-hover: #821B20;
-  --td-danger-bg: #FDF0F0;
-  --td-code-bg: #0E1917;
-  --td-code-border: #233B36;
-  --td-code-text: #E6F3F0;
-  --td-font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
-  --td-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Consolas, monospace;
+/* tasteskill v2 Anti-Slop Art Direction — Platform Administration & Migration Studio */
+
+body:has(main > .migration-shell),
+body:has(main > .platform-admin) {
+  background-color: #f6f5f1;
 }
 
-body:has(.platform-admin),
-body:has(.migration-shell) {
-  display: block;
-  background-color: var(--td-bg);
-  color: var(--td-text);
-  font-family: var(--td-font-sans);
-}
-
-main:has(.platform-admin),
-main:has(.migration-shell) {
-  box-sizing: border-box;
+main:has(> .migration-shell),
+main:has(> .platform-admin) {
   width: 100%;
-  max-width: 78rem;
-  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 120px;
+}
+
+.migration-shell,
+.platform-admin {
+  width: min(100% - 64px, 1280px);
   margin: 0 auto;
-  padding: clamp(1rem, 4vw, 2.5rem);
+  color: #141413;
+  font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Inter", sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
 }
 
-/* tata letak dasar halaman platform & migration */
-.platform-admin,
-.migration-shell {
+/* ==========================================================================
+   Plain Top Navigation Bar & Tonal Sub-Bar (No Glass, No Bar Chrome)
+   ========================================================================== */
+
+.migration-nav,
+.platform-nav {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  padding: 16px max(32px, calc((100vw - 1280px) / 2));
+  background-color: #141413;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.migration-nav a,
+.platform-nav a {
+  color: #c7c4bb;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+.migration-nav a:hover,
+.platform-nav a:hover,
+.migration-nav a[aria-current="page"],
+.platform-nav a[aria-current="page"] {
+  color: #faf9f5;
+  text-decoration: none;
+}
+
+.migration-nav a[aria-current="page"],
+.platform-nav a[aria-current="page"] {
+  font-weight: 600;
+}
+
+.migration-breadcrumb,
+.platform-breadcrumb {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  padding: 12px max(32px, calc((100vw - 1280px) / 2));
+  background-color: #ebe8e0;
+  border-bottom: 1px solid #dcd8ce;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 36px;
+  font-size: 14px;
+  color: #595750;
+}
+
+.migration-breadcrumb a,
+.platform-breadcrumb a {
+  color: #141413;
+  text-decoration: none;
+}
+
+.migration-breadcrumb a:hover,
+.platform-breadcrumb a:hover {
+  color: #0f5247;
+  text-decoration: underline;
+}
+
+.migration-breadcrumb [aria-current="page"],
+.platform-breadcrumb span:last-child {
+  color: #141413;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Asymmetric 2-Column Split Header (Title Left, Creation Panel Right)
+   ========================================================================== */
+
+.platform-split-header {
   display: grid;
-  gap: 1.35rem;
-  width: 100%;
-  min-width: 0;
-  line-height: 1.55;
-  color: var(--td-text);
-  overflow-wrap: anywhere;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 56px;
+  align-items: start;
+  padding: 56px 0 48px;
+  margin-bottom: 48px;
+  border-bottom: 1px solid #dcd8ce;
 }
 
-.platform-admin h1,
-.platform-admin h2,
-.platform-admin p,
+.migration-header,
+.platform-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 48px 0 36px;
+  margin-bottom: 36px;
+  border-bottom: 1px solid #dcd8ce;
+}
+
+.migration-shell .eyebrow {
+  margin: 40px 0 8px;
+  color: #595750;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.migration-shell .eyebrow + .migration-header {
+  padding-top: 8px;
+}
+
 .migration-shell h1,
+.platform-admin h1 {
+  margin: 0 0 16px;
+  color: #141413;
+  font-size: clamp(36px, 4.2vw, 52px);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+}
+
 .migration-shell h2,
-.migration-shell h3,
-.migration-shell p {
+.platform-admin h2 {
+  margin: 0 0 8px;
+  color: #141413;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.migration-lead,
+.platform-lead {
+  max-width: 62ch;
+  margin: 0 0 20px;
+  color: #141413;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.platform-summary-line {
+  margin: 0;
+  color: #595750;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.platform-summary-line strong {
+  color: #141413;
+  font-weight: 600;
+}
+
+/* Right-Hand Creation Panel (Tonal Step Field, No Borders/Shadows) */
+.platform-create-panel {
+  padding: 28px 32px;
+  background-color: #ebe8e0;
+  border-radius: 6px;
+}
+
+.platform-create-panel h2 {
+  margin-bottom: 6px;
+}
+
+.platform-create-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  align-items: end;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.platform-create-form .form-field,
+.platform-inline-create .form-field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  color: #141413;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.platform-create-form input,
+.platform-inline-create input,
+.platform-inline-create select {
+  min-height: 40px;
+  height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #cfcac0;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #141413;
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   Section Containers & Inline Creation Bars
+   ========================================================================== */
+
+.platform-card,
+.migration-metadata,
+.migration-sql-section,
+.migration-draft-controls,
+.migration-shell > .migration-editor-form,
+.migration-empty,
+.platform-empty {
+  margin: 0 0 40px;
+  padding: 32px;
+  background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-radius: 6px;
+}
+
+.platform-section-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #e6e3da;
+}
+
+.platform-inline-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
   margin: 0;
 }
 
-.platform-admin h1,
-.migration-shell h1 {
-  font-size: clamp(1.65rem, 3vw, 2.2rem);
-  font-weight: 800;
-  letter-spacing: -0.025em;
+/* ==========================================================================
+   Readable Editorial Data Table (.platform-table & .migration-history-table)
+   ========================================================================== */
+
+.platform-table-container,
+.migration-scroll {
+  width: 100%;
+  overflow-x: auto;
+  margin: 0 0 48px;
+  background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-radius: 6px;
+}
+
+.platform-card .platform-table-container {
+  margin-bottom: 0;
+}
+
+.platform-table,
+.migration-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.platform-table caption,
+.migration-history-table caption {
+  padding: 16px 22px;
+  background-color: #f1efe9;
+  border-bottom: 1px solid #dcd8ce;
+  color: #595750;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.platform-table thead th,
+.migration-history-table thead th {
+  padding: 15px 22px;
+  background-color: #ebe8e0;
+  color: #141413;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid #dcd8ce;
+  border-right: 1px solid #e2dfd6;
+  white-space: nowrap;
+}
+
+.platform-table thead th:last-child,
+.migration-history-table thead th:last-child {
+  border-right: 0;
+}
+
+.platform-table tbody th,
+.platform-table tbody td,
+.migration-history-table tbody th,
+.migration-history-table tbody td {
+  padding: 20px 22px;
+  border-bottom: 1px solid #e6e3da;
+  border-right: 1px solid #efede7;
+  color: #141413;
+  text-align: left;
+  vertical-align: top;
+}
+
+.platform-table tbody th:last-child,
+.platform-table tbody td:last-child,
+.migration-history-table tbody th:last-child,
+.migration-history-table tbody td:last-child {
+  border-right: 0;
+}
+
+.platform-table tbody tr:last-child th,
+.platform-table tbody tr:last-child td,
+.migration-history-table tbody tr:last-child th,
+.migration-history-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.platform-table tbody tr:hover th,
+.platform-table tbody tr:hover td,
+.migration-history-table tbody tr:hover th,
+.migration-history-table tbody tr:hover td {
+  background-color: #faf9f6;
+}
+
+/* Table Column Details */
+.platform-col-id {
+  width: 110px;
+  white-space: nowrap;
+}
+
+.platform-id-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background-color: #ebe8e0;
+  color: #141413;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.platform-col-primary {
+  min-width: 150px;
+}
+
+.platform-entity-name,
+.platform-entity-link {
+  display: block;
+  color: #141413;
+  font-size: 17px;
+  font-weight: 600;
   line-height: 1.25;
-  color: var(--td-text);
 }
 
-.platform-admin h2,
-.migration-shell h2 {
-  font-size: clamp(1.15rem, 2vw, 1.35rem);
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-  color: var(--td-text);
+.platform-entity-sub {
+  display: block;
+  margin-top: 4px;
+  color: #595750;
+  font-size: 13px;
+  font-weight: 400;
 }
 
-.migration-shell h3 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--td-text);
+.platform-col-badge {
+  width: 140px;
+  white-space: nowrap;
 }
 
-.platform-lead,
-.migration-lead {
-  margin-top: 0.35rem;
-  max-width: 68ch;
-  color: var(--td-text-secondary);
-  font-size: 0.975rem;
+.platform-col-nav {
+  min-width: 220px;
 }
 
-.platform-admin a,
-.migration-shell a {
-  color: var(--td-primary);
-  text-underline-offset: 0.2em;
+.platform-table-action,
+.migration-history-table td a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background-color: #ebe8e0;
+  color: #141413;
+  font-size: 13px;
   font-weight: 600;
   text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.platform-admin a:hover,
-.migration-shell a:hover {
-  color: var(--td-primary-hover);
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-}
-
-.platform-admin :is(a, button, input, select, textarea, [tabindex]):focus-visible,
-.migration-shell :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid var(--td-primary);
-  outline-offset: 2px;
-}
-
-/* navigasi atas & breadcrumb */
-.platform-nav,
-.migration-nav {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 0.65rem;
-  padding: 0.65rem 1.1rem;
-  background: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: 0.625rem;
-  box-shadow: 0 1px 2px rgba(16, 29, 27, 0.04);
-  font-size: 0.925rem;
-  color: var(--td-border-strong);
-}
-
-.platform-nav a,
-.migration-nav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.5rem;
-  padding: 0 0.65rem;
-  border-radius: 0.375rem;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.platform-nav a:hover,
-.migration-nav a:hover {
-  background: var(--td-primary-subtle);
+.platform-table-action:hover,
+.migration-history-table td a:hover {
+  background-color: #141413;
+  color: #faf9f5;
   text-decoration: none;
 }
 
-.platform-nav a[aria-current="page"],
-.migration-nav a[aria-current="page"] {
-  background: var(--td-primary-subtle);
-  color: var(--td-primary);
-  font-weight: 700;
+.platform-scope-desc {
+  color: #141413;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
-.platform-breadcrumb,
-.migration-breadcrumb {
+/* ==========================================================================
+   Quiet Inline Row Controls (Zero Bright Blue Button Spam!)
+   ========================================================================== */
+
+.platform-col-credentials {
+  min-width: 310px;
+}
+
+.platform-cred-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.platform-compact-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  margin: 0;
+}
+
+.platform-compact-form .form-field {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: #595750;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.platform-compact-form input {
+  min-height: 36px;
+  height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #d4d0c5;
+  border-radius: 6px;
+  background-color: #faf9f6;
+  font-size: 14px;
+  color: #141413;
+}
+
+.platform-compact-form input:focus {
+  background-color: #ffffff;
+  border-color: #141413;
+}
+
+.platform-col-action,
+.platform-col-danger {
+  min-width: 240px;
+  max-width: 300px;
+}
+
+.platform-cell-form {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 0.6rem;
-  padding: 0.45rem 0.9rem;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid var(--td-border);
-  border-radius: 0.5rem;
-  color: var(--td-muted);
-  font-size: 0.875rem;
-  font-family: var(--td-font-mono);
-}
-
-.platform-breadcrumb a,
-.migration-breadcrumb a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.25rem;
-}
-
-.platform-header,
-.migration-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: flex-start;
-  gap: 1rem;
-  padding: 1.35rem 1.5rem;
-  background: linear-gradient(135deg, #FFFFFF 0%, #F7FBFA 100%);
-  border: 1px solid var(--td-border);
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05);
-}
-
-/* kartu, section, dan daftar pada platform admin */
-.platform-card,
-.migration-sql-section,
-.migration-edit-section,
-.migration-execute-section {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  padding: clamp(1.15rem, 2.5vw, 1.65rem);
-  background: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05), 0 4px 12px -2px rgba(16, 29, 27, 0.03);
-  display: grid;
-  gap: 1.15rem;
-}
-
-.platform-card-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  padding-bottom: 0.85rem;
-  border-bottom: 1px solid #E8EFEA;
-}
-
-.platform-meta {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--td-muted);
-  font-size: 0.875rem;
-  font-family: var(--td-font-mono);
-}
-
-.platform-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.5rem), 1fr));
-  gap: 1rem;
-  align-items: stretch;
-}
-
-.platform-admin form {
-  display: grid;
-  gap: 0.65rem;
-  align-content: space-between;
+  gap: 10px;
   margin: 0;
-  min-width: 0;
-  padding: 0.95rem;
-  background: #F9FBFA;
-  border: 1px solid #E3ECE8;
-  border-radius: 0.5rem;
 }
 
-.platform-form-danger {
-  padding: 0.95rem;
-  border: 1px solid #F2BFC2 !important;
-  border-radius: 0.5rem;
-  background: #FFF9F9 !important;
-}
-
-.platform-danger-note {
-  color: var(--td-danger);
-  font-size: 0.84rem;
-  line-height: 1.45;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.platform-confirm-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  color: var(--td-text);
-  font-size: 0.875rem;
-  line-height: 1.45;
-  cursor: pointer;
-  overflow-wrap: anywhere;
-}
-
-.platform-confirm-label input[type="checkbox"] {
-  flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
-  margin: 0;
-  accent-color: var(--td-danger);
-}
-
-.platform-field-note {
-  color: var(--td-muted);
-  font-size: 0.875rem;
-  line-height: 1.45;
-}
-
-.platform-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 0.75rem;
-}
-
-.platform-list-item {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.85rem 1.25rem;
-  padding: 0.85rem 1rem;
-  background: #FAFDFC;
-  border: 1px solid var(--td-border);
-  border-radius: 0.5rem;
-}
-
-.platform-item-info {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-/* badge peran & status dengan titik indikator */
+/* Badges (Tonal Step, No Garish Rainbows) */
 .platform-badge,
 .migration-status {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.22rem 0.68rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  font-family: var(--td-font-mono);
-  line-height: 1.3;
-  border: 1px solid transparent;
-}
-
-.platform-badge::before,
-.migration-status::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: currentColor;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
+  background-color: #ebe8e0;
+  color: #141413;
 }
 
 .platform-badge-admin,
 .platform-badge-edit,
-.migration-status-applied {
-  color: var(--td-success);
-  background: var(--td-success-bg);
-  border-color: #AEE0C6;
+.migration-status-APPLIED {
+  background-color: #dfece7;
+  color: #0f5247;
 }
 
 .platform-badge-user,
 .platform-badge-view {
-  color: var(--td-text-secondary);
-  background: var(--td-bg);
-  border-color: var(--td-border-strong);
+  background-color: #ebe8e0;
+  color: #141413;
 }
 
-.migration-status-draft {
-  color: var(--td-warning);
-  background: var(--td-warning-bg);
-  border-color: #F0D196;
+.migration-status-DRAFT {
+  background-color: #f2ead8;
+  color: #6e470b;
 }
 
-.migration-status-failed {
-  color: var(--td-danger);
-  background: var(--td-danger-bg);
-  border-color: #F2BFC2;
+.migration-status-FAILED {
+  background-color: #f4e3e3;
+  color: #8f2424;
 }
 
-/* form input, textarea, select, dan tombol */
-.platform-admin .form-field,
-.migration-field {
-  display: grid;
-  gap: 0.45rem;
-  min-width: 0;
-  font-size: 0.875rem;
-  font-weight: 650;
-  color: var(--td-text);
-}
+/* ==========================================================================
+   Button Hierarchy: Primary (Obsidian), Secondary (Warm Stone), Danger (Oxblood)
+   ========================================================================== */
 
-.platform-admin input:not([type="checkbox"]),
-.platform-admin select,
-.migration-shell input:not([type="checkbox"]),
-.migration-shell select,
-.migration-shell textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 2.75rem;
-  padding: 0.625rem 0.85rem;
-  border: 1px solid var(--td-border-strong);
-  border-radius: 0.375rem;
-  background: var(--td-surface);
-  color: var(--td-text);
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 400;
-  box-shadow: 0 1px 2px rgba(16, 29, 27, 0.03);
-}
-
-/* dark ide-style sql editor */
-.migration-shell textarea[name="sql_text"] {
-  padding: 1rem 1.15rem;
-  background: var(--td-code-bg);
-  color: var(--td-code-text);
-  border: 1px solid var(--td-code-border);
-  border-radius: 0.5rem;
-  font-family: var(--td-font-mono);
-  font-size: 0.925rem;
-  line-height: 1.6;
-  resize: vertical;
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-.migration-shell textarea[name="sql_text"]::placeholder {
-  color: #6E8F87;
-}
-
-.platform-admin button,
-.migration-btn {
+.migration-link-button,
+.migration-shell button,
+.platform-admin button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-sizing: border-box;
-  min-height: 2.75rem;
-  padding: 0.6rem 1.15rem;
-  border: 1px solid transparent;
-  border-radius: 0.375rem;
-  background: linear-gradient(180deg, #137A65 0%, var(--td-primary) 100%);
-  color: #FFFFFF;
-  font: inherit;
-  font-size: 0.925rem;
-  font-weight: 650;
+  min-height: 38px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 9999px;
+  background-color: #141413;
+  color: #faf9f5;
+  font-family: "SF Pro Text", -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(15, 107, 88, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
-.platform-admin button:hover,
-.migration-btn:hover,
-.migration-btn-primary:hover {
-  background: linear-gradient(180deg, var(--td-primary) 0%, var(--td-primary-hover) 100%);
-  color: #FFFFFF;
+.migration-link-button,
+.migration-shell button {
+  min-height: 44px;
+  padding: 11px 22px;
+  font-size: 15px;
+}
+
+.migration-link-button:hover,
+.migration-shell button:hover,
+.platform-admin button:hover {
+  background-color: #0f5247;
+  color: #ffffff;
   text-decoration: none;
 }
 
-.migration-btn-secondary {
-  background: var(--td-surface);
-  color: var(--td-text);
-  border-color: var(--td-border-strong);
-  box-shadow: 0 1px 2px rgba(16, 29, 27, 0.04);
+/* Quiet Secondary Row Buttons (Ubah nama, Ganti kata sandi, Jadikan admin) */
+button.btn-secondary {
+  min-height: 36px;
+  padding: 7px 14px;
+  background-color: #ebe8e0;
+  color: #141413;
 }
 
-.migration-btn-secondary:hover {
-  background: var(--td-primary-subtle);
-  border-color: var(--td-primary);
-  color: var(--td-primary);
+button.btn-secondary:hover {
+  background-color: #141413;
+  color: #faf9f5;
 }
 
-.platform-admin .btn-danger {
-  background: linear-gradient(180deg, #B82B32 0%, var(--td-danger) 100%);
-  color: #FFFFFF;
-  box-shadow: 0 1px 2px rgba(166, 38, 44, 0.25);
+/* Restrained Destructive Button (Subtle Oxblood at rest, Solid Oxblood on hover) */
+button.btn-danger {
+  min-height: 36px;
+  padding: 7px 16px;
+  background-color: #f4e6e6;
+  color: #8f2424;
 }
 
-.platform-admin .btn-danger:hover {
-  background: var(--td-danger-hover);
-  color: #FFFFFF;
+button.btn-danger:hover {
+  background-color: #8f2424;
+  color: #ffffff;
+}
+
+.migration-link-button:active,
+.migration-shell button:active,
+.platform-admin button:active {
+  transform: scale(0.97);
+}
+
+.platform-field-note,
+.platform-danger-note {
+  display: block;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.platform-field-note {
+  color: #595750;
+}
+
+.platform-danger-note {
+  color: #595750;
+}
+
+.platform-confirm-label,
+.migration-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #141413;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.38;
+  cursor: pointer;
+}
+
+.platform-confirm-label input[type="checkbox"],
+.migration-confirm-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-height: 15px;
+  margin: 2px 0 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: #141413;
+}
+
+/* ==========================================================================
+   Migration SQL Editor & Preview (Monospace Allowed Here Only)
+   ========================================================================== */
+
+.migration-editor-form,
+.migration-execute-form {
+  display: grid;
+  gap: 20px;
+}
+
+.migration-draft-controls .migration-editor-form {
+  margin-bottom: 28px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid #e6e3da;
+}
+
+textarea[name="sql_text"] {
+  min-height: 220px;
+  padding: 20px;
+  border: 1px solid #141413;
+  border-radius: 6px;
+  background-color: #141413;
+  color: #faf9f5;
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.migration-sql-preview {
+  margin: 0;
+  padding: 24px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background-color: #141413;
+  color: #faf9f5;
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.migration-warning {
+  padding: 24px;
+  border-radius: 6px;
+  background-color: #f2ead8;
+}
+
+.migration-warning p {
+  margin: 0 0 12px;
+  color: #141413;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.migration-warning .migration-confirm-label {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background-color: #ffffff;
+  font-size: 14px;
 }
 
 .migration-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
-/* tabel riwayat migration & pembungkus scroll horizontal */
-.migration-scroll {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--td-border);
-  border-radius: 0.75rem;
-  background: var(--td-surface);
-  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05);
+.migration-metadata p {
+  margin: 0 0 10px;
+  font-size: 16px;
 }
 
-.migration-history-table {
-  width: 100%;
-  min-width: 40rem;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 0.925rem;
+.migration-metadata p:last-child {
+  margin-bottom: 0;
 }
 
-.migration-history-table caption {
-  padding: 0.85rem 1.15rem;
-  text-align: left;
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--td-muted);
-  background: #F6F9F8;
-  border-bottom: 1px solid var(--td-border);
-}
-
-.migration-history-table th {
-  padding: 0.75rem 1.15rem;
-  border-bottom: 1px solid var(--td-border);
-  background: #F3F7F5;
-  color: var(--td-text-secondary);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.045em;
-  text-transform: uppercase;
-}
-
-.migration-history-table td {
-  padding: 0.85rem 1.15rem;
-  border-bottom: 1px solid #E7EFEA;
-  vertical-align: middle;
-}
-
-.migration-history-table tbody tr:hover {
-  background: #F9FCFB;
-}
-
-.migration-history-table td:first-child {
-  font-family: var(--td-font-mono);
-  font-weight: 700;
-  color: var(--td-primary);
-}
-
-/* editor form, metadata detail, sql preview, dan kotak peringatan */
-.migration-editor-form {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  padding: clamp(1.25rem, 2.5vw, 1.75rem);
-  background: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05), 0 4px 12px -2px rgba(16, 29, 27, 0.03);
-  display: grid;
-  gap: 1.25rem;
-}
-
-.migration-meta {
-  box-sizing: border-box;
-  width: 100%;
-  padding: clamp(1.15rem, 2.5vw, 1.5rem);
-  background: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.04);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 0.75rem 1.25rem;
-}
-
-.migration-sql-preview {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 1.15rem 1.25rem;
-  overflow-x: auto;
-  background: var(--td-code-bg);
-  border: 1px solid var(--td-code-border);
-  border-radius: 0.5rem;
-  color: var(--td-code-text);
-  font-family: var(--td-font-mono);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-.migration-warning {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 1.25rem 1.35rem;
-  background: var(--td-warning-bg);
-  border: 1px solid #F0D196;
-  border-radius: 0.5rem;
-  color: var(--td-text);
-  display: grid;
-  gap: 0.85rem;
-}
-
-.migration-warning h3 {
-  color: var(--td-warning);
-}
-
-.migration-confirm-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid #E5C585;
-  border-radius: 0.375rem;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.migration-confirm-label input[type="checkbox"] {
-  width: 1.25rem;
-  height: 1.25rem;
-  margin-top: 0.15rem;
-  flex-shrink: 0;
-  accent-color: var(--td-primary);
-}
-
-/* pesan status kosong dan error */
-.platform-empty,
-.migration-empty {
-  padding: 1.5rem;
-  background: var(--td-surface);
-  border: 1px dashed var(--td-border-strong);
-  border-radius: 0.625rem;
-  color: var(--td-muted);
-}
-
-.migration-error,
-.migration-error-box {
-  padding: 1rem 1.25rem;
-  background: var(--td-danger-bg);
-  border: 1px solid #F2BFC2;
-  border-radius: 0.5rem;
-  color: var(--td-danger);
-  font-weight: 500;
-}
-
-/* responsif untuk layar tablet dan ponsel hingga 320px */
-@media (max-width: 60rem) {
-  .platform-header,
-  .migration-header {
-    flex-direction: column;
-    align-items: stretch;
+@media (max-width: 960px) {
+  .migration-shell,
+  .platform-admin {
+    width: calc(100% - 32px);
   }
 
-  .platform-actions {
+  .platform-split-header {
     grid-template-columns: 1fr;
+    gap: 32px;
+    padding: 36px 0;
+  }
+
+  .platform-inline-create {
+    width: 100%;
+  }
+
+  .platform-inline-create .form-field {
+    flex: 1 1 100%;
   }
 }
 
-@media (max-width: 42rem) {
-  main:has(.platform-admin),
-  main:has(.migration-shell) {
-    padding: 0.85rem;
-  }
-
-  .platform-admin form,
-  .migration-actions {
-    display: grid;
+@media (max-width: 480px) {
+  .migration-actions,
+  .migration-actions button,
+  .migration-link-button {
     width: 100%;
-  }
-
-  .platform-admin button,
-  .migration-btn {
-    width: 100%;
-  }
-
-  .platform-list-item {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .migration-history-table th,
-  .migration-history-table td {
-    padding: 0.6rem 0.75rem;
   }
 }
