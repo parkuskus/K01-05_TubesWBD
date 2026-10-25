@@ -72,9 +72,22 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	if err := authenticator.EnsureInitialAdmin(ctx, " Root ", "initial-password-123"); err != nil {
 		t.Fatal(err)
 	}
-	userID, err := authenticator.Authenticate(ctx, "ROOT", "initial-password-123")
+	userID, err := authenticator.Authenticate(ctx, "Root", "initial-password-123")
 	if err != nil || userID == "" {
 		t.Fatalf("Authenticate() = (%q, %v), want a user ID", userID, err)
+	}
+	if _, err := authenticator.Authenticate(ctx, "ROOT", "initial-password-123"); err != ErrInvalidCredentials {
+		t.Fatalf("case-mismatched username error = %v, want ErrInvalidCredentials", err)
+	}
+	lowerHash, err := HashPassword("lowercase-account-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (username, password_hash) VALUES ('root', $1)`, lowerHash); err != nil {
+		t.Fatalf("create account differing only by username case: %v", err)
+	}
+	if _, err := authenticator.Authenticate(ctx, "root", "lowercase-account-password"); err != nil {
+		t.Fatalf("authenticate case-distinct account: %v", err)
 	}
 	proof, err := authenticator.AuthenticateForSession(ctx, "root", "initial-password-123")
 	if err != nil {
@@ -90,12 +103,12 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&userCount); err != nil {
 		t.Fatal(err)
 	}
-	if userCount != 1 {
-		t.Fatalf("user count after repeated bootstrap = %d, want 1", userCount)
+	if userCount != 2 {
+		t.Fatalf("user count after case-distinct account and repeated bootstrap = %d, want 2", userCount)
 	}
 	var storedPassword string
 	var isAdmin bool
-	if err := db.QueryRowContext(ctx, `SELECT password_hash, is_platform_admin FROM users WHERE lower(username) = 'root'`).Scan(&storedPassword, &isAdmin); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT password_hash, is_platform_admin FROM users WHERE username = 'Root'`).Scan(&storedPassword, &isAdmin); err != nil {
 		t.Fatal(err)
 	}
 	if storedPassword == "initial-password-123" || !isAdmin {

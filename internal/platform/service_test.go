@@ -74,12 +74,12 @@ func (f *fakeUsers) deleteUser(ctx context.Context, actor, _ int64) error {
 	return nil
 }
 
-func TestCreateUserNormalizesAndHashesPassword(t *testing.T) {
+func TestCreateUserPreservesUsernameCaseAndHashesPassword(t *testing.T) {
 	f := &fakeUsers{admin: true}
 	s := &Service{users: f}
 	id, err := s.CreateUser(context.Background(), "1", "  ALIce  ", "safe-password")
-	if err != nil || id != "2" || f.username != "alice" || f.hash == "safe-password" || bcrypt.CompareHashAndPassword([]byte(f.hash), []byte("safe-password")) != nil {
-		t.Fatalf("create returned id=%q error=%v; normalized/hashed=%t", id, err, f.username == "alice" && f.hash != "safe-password")
+	if err != nil || id != "2" || f.username != "ALIce" || f.hash == "safe-password" || bcrypt.CompareHashAndPassword([]byte(f.hash), []byte("safe-password")) != nil {
+		t.Fatalf("create returned id=%q error=%v; case-preserved/hashed=%t", id, err, f.username == "ALIce" && f.hash != "safe-password")
 	}
 }
 

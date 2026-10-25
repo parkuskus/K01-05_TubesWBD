@@ -118,6 +118,8 @@ make test      # Generate lalu jalankan seluruh test
 
 Saat startup, `cmd/web` memuat konfigurasi, menghubungi `PLATFORM_DATABASE_URL`, menerapkan migration platform, dan membuat admin pertama bila tabel pengguna masih kosong. Semua halaman kerja memakai sesi; POST memakai CSRF. Route utama:
 
+Username peka terhadap huruf besar-kecil; spasi di awal/akhir dihapus. Akun yang sudah ada sebelum aturan ini berubah tersimpan dalam lowercase, sehingga username lama harus dimasukkan dalam lowercase. Password tetap peka huruf besar-kecil.
+
 | Route | Fungsi |
 |---|---|
 | `GET/POST /login`, `POST /logout`, `GET /` | Masuk, keluar, beranda. |

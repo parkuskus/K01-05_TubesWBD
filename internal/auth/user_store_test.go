@@ -36,7 +36,7 @@ func (s *fakeUserStore) EnsureInitialAdmin(_ context.Context, username, password
 	return nil
 }
 
-func TestAuthenticatorAcceptsValidCredentialsAndNormalizesUsername(t *testing.T) {
+func TestAuthenticatorRequiresExactUsernameCase(t *testing.T) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("correct horse battery staple"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
@@ -46,12 +46,15 @@ func TestAuthenticatorAcceptsValidCredentialsAndNormalizesUsername(t *testing.T)
 	}}
 	authenticator := &Authenticator{store: store}
 
-	userID, err := authenticator.Authenticate(context.Background(), "  ADMIN ", "correct horse battery staple")
+	userID, err := authenticator.Authenticate(context.Background(), "  admin ", "correct horse battery staple")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if userID != contracts.UserID("42") {
 		t.Fatalf("user ID = %q, want %q", userID, "42")
+	}
+	if _, err := authenticator.Authenticate(context.Background(), "  ADMIN ", "correct horse battery staple"); err != ErrInvalidCredentials {
+		t.Fatalf("case-mismatched username error = %v, want ErrInvalidCredentials", err)
 	}
 }
 
@@ -80,7 +83,7 @@ func TestInitialAdminPasswordIsHashedAndBootstrapIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	record := store.users["root"]
+	record := store.users["Root"]
 	if record.PasswordHash == password {
 		t.Fatal("bootstrap password was stored in plaintext")
 	}
@@ -90,7 +93,7 @@ func TestInitialAdminPasswordIsHashedAndBootstrapIsIdempotent(t *testing.T) {
 	if err := bcrypt.CompareHashAndPassword([]byte(record.PasswordHash), []byte(password)); err != nil {
 		t.Fatalf("stored password hash does not match bootstrap password: %v", err)
 	}
-	if _, exists := store.users["other"]; exists {
+	if _, exists := store.users["Other"]; exists {
 		t.Fatal("bootstrap replaced or added an account after the first user existed")
 	}
 }

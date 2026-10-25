@@ -88,7 +88,7 @@ func (a *Authenticator) EnsureInitialAdmin(ctx context.Context, username, passwo
 }
 
 func normalizeUsername(username string) (string, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = strings.TrimSpace(username)
 	if username == "" || len(username) > 64 {
 		return "", ErrInvalidCredentials
 	}
@@ -116,7 +116,7 @@ func (s *postgresUserStore) FindByUsername(ctx context.Context, username string)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, username, password_hash, is_platform_admin
 		FROM users
-		WHERE lower(username) = $1`, username).Scan(
+		WHERE username = $1`, username).Scan(
 		&id, &record.Username, &record.PasswordHash, &record.IsPlatformAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return userRecord{}, ErrInvalidCredentials
