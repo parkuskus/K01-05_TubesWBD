@@ -122,6 +122,15 @@ func revokeSessions(ctx context.Context, tx *sql.Tx, user int64) error {
 	return err
 }
 
+func revokeGroupSessions(ctx context.Context, tx *sql.Tx, group int64) error {
+	_, err := tx.ExecContext(ctx, `WITH revoked AS (
+		UPDATE sessions SET revoked_at = $2
+		WHERE user_id IN (SELECT user_id::text FROM group_memberships WHERE group_id = $1)
+		  AND revoked_at IS NULL RETURNING id
+	) DELETE FROM session_tokens USING revoked WHERE session_tokens.session_id = revoked.id`, group, time.Now())
+	return err
+}
+
 func (p *postgresRepository) updateUsername(ctx context.Context, actor, user int64, username string) error {
 	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
 		return updateUser(ctx, tx, `UPDATE users SET username = $2 WHERE id = $1`, user, username)
@@ -231,6 +240,9 @@ func (p *postgresRepository) renameGroup(ctx context.Context, actor, group int64
 
 func (p *postgresRepository) deleteGroup(ctx context.Context, actor, group int64) error {
 	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		if err := revokeGroupSessions(ctx, tx, group); err != nil {
+			return err
+		}
 		return updateUser(ctx, tx, `DELETE FROM groups WHERE id = $1`, group)
 	})
 }
@@ -289,11 +301,31 @@ func (p *postgresRepository) setMembership(ctx context.Context, actor, user, gro
 			return ErrNotFound
 		}
 		if member {
-			_, err := tx.ExecContext(ctx, `INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2) ON CONFLICT (group_id, user_id) DO NOTHING`, group, user)
+			result, err := tx.ExecContext(ctx, `INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2) ON CONFLICT (group_id, user_id) DO NOTHING`, group, user)
+			if err != nil {
+				return err
+			}
+			changed, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if changed > 0 {
+				return revokeSessions(ctx, tx, user)
+			}
+			return nil
+		}
+		result, err := tx.ExecContext(ctx, `DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2`, group, user)
+		if err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2`, group, user)
-		return err
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if changed > 0 {
+			return revokeSessions(ctx, tx, user)
+		}
+		return nil
 	})
 }
 
@@ -351,13 +383,23 @@ func (p *postgresRepository) setGrant(ctx context.Context, actor, group, databas
 			}
 			return err
 		}
-		if level == contracts.AccessNone {
-			_, err := tx.ExecContext(ctx, `DELETE FROM group_database_access WHERE group_id = $1 AND database_id = $2`, group, database)
+		var previous int64
+		err := tx.QueryRowContext(ctx, `SELECT level FROM group_database_access WHERE group_id = $1 AND database_id = $2`, group, database).Scan(&previous)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO group_database_access (group_id, database_id, level) VALUES ($1, $2, $3)
-			ON CONFLICT (group_id, database_id) DO UPDATE SET level = EXCLUDED.level`, group, database, level)
-		return err
+		if level == contracts.AccessNone {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM group_database_access WHERE group_id = $1 AND database_id = $2`, group, database); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `INSERT INTO group_database_access (group_id, database_id, level) VALUES ($1, $2, $3)
+			ON CONFLICT (group_id, database_id) DO UPDATE SET level = EXCLUDED.level`, group, database, level); err != nil {
+			return err
+		}
+		if previous != int64(level) {
+			return revokeGroupSessions(ctx, tx, group)
+		}
+		return nil
 	})
 }
 

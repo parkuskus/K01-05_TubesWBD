@@ -135,23 +135,28 @@ func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request, proof Lo
 // RequireSession protects a handler and exposes the authenticated user through CurrentUser.
 func (m *SessionManager) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reject := func() {
+			m.clearCookie(w)
+			if r.Method == http.MethodGet && r.URL.Path == "/" {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		}
 		cookie, err := r.Cookie(m.config.CookieName)
 		if err != nil {
-			m.clearCookie(w)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			reject()
 			return
 		}
 		presentedHash, err := hashSessionToken(cookie.Value)
 		if err != nil {
-			m.clearCookie(w)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			reject()
 			return
 		}
 		now := m.now()
 		record, err := m.store.LoadAndTouch(r.Context(), presentedHash[:], now, m.config.IdleTimeout)
 		if errors.Is(err, ErrUnauthenticated) {
-			m.clearCookie(w)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			reject()
 			return
 		}
 		if err != nil {
@@ -167,8 +172,7 @@ func (m *SessionManager) RequireSession(next http.Handler) http.Handler {
 			}
 			record, err = m.store.Rotate(r.Context(), record.ID, presentedHash[:], newHash[:], now, m.config.IdleTimeout, m.config.GracePeriod)
 			if errors.Is(err, ErrUnauthenticated) {
-				m.clearCookie(w)
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				reject()
 				return
 			}
 			if err != nil {

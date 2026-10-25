@@ -387,7 +387,7 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 		t.Fatalf("view-only POST /databases/1/migrations = %d, want 403", resp.Code)
 	}
 
-	// 5. Admin revokes Viewers grant -> viewer's next request is immediately denied (403).
+	// 5. Admin revokes Viewers grant -> the viewer's session is immediately invalidated.
 	revokeToken := adminClient.csrfFrom("/platform/groups/1")
 	if resp := adminClient.post("/platform/groups/1/grants", url.Values{
 		"database_id":        {"1"},
@@ -397,17 +397,17 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 	}); resp.Code != http.StatusSeeOther {
 		t.Fatalf("revoke grant status=%d", resp.Code)
 	}
-	if resp := viewerClient.get("/databases/1/data?schema=" + url.QueryEscape(targetSchema) + "&table=products&page=1"); resp.Code != http.StatusForbidden {
-		t.Fatalf("revoked viewer GET data = %d, want 403", resp.Code)
+	if resp := viewerClient.get("/databases/1/data?schema=" + url.QueryEscape(targetSchema) + "&table=products&page=1"); resp.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked viewer GET data = %d, want 401", resp.Code)
 	}
 
-	// 6. Logout revokes session -> next request returns 401.
-	logoutToken := viewerClient.csrfFrom("/")
-	if resp := viewerClient.post("/logout", url.Values{"gorilla.csrf.Token": {logoutToken}}); resp.Code != http.StatusSeeOther {
-		t.Fatalf("viewer logout status=%d", resp.Code)
+	// 6. Logout an active editor session -> home redirects to login.
+	logoutToken := editorClient.csrfFrom("/")
+	if resp := editorClient.post("/logout", url.Values{"gorilla.csrf.Token": {logoutToken}}); resp.Code != http.StatusSeeOther {
+		t.Fatalf("editor logout status=%d", resp.Code)
 	}
-	if resp := viewerClient.get("/"); resp.Code != http.StatusUnauthorized {
-		t.Fatalf("logged-out GET / = %d, want 401", resp.Code)
+	if resp := editorClient.get("/"); resp.Code != http.StatusSeeOther || resp.Header().Get("Location") != "/login" {
+		t.Fatalf("logged-out GET / = %d location %q, want 303 to /login", resp.Code, resp.Header().Get("Location"))
 	}
 }
 

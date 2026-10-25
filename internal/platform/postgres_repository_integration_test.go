@@ -557,7 +557,7 @@ func TestConcurrentMembershipInsertionUnique(t *testing.T) {
 	}
 }
 
-func TestGroupDeleteRemovesMembershipOnly(t *testing.T) {
+func TestGroupDeleteRemovesMembershipAndRevokesSession(t *testing.T) {
 	db := platformTestDB(t)
 	ctx := context.Background()
 	login := auth.NewAuthenticator(db)
@@ -599,8 +599,8 @@ func TestGroupDeleteRemovesMembershipOnly(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM sessions WHERE user_id = $1 AND revoked_at IS NULL`, user).Scan(&sessions); err != nil {
 		t.Fatal(err)
 	}
-	if members != 0 || users != 1 || sessions != 1 {
-		t.Fatalf("group deletion affected unrelated data: members=%d users=%d sessions=%d", members, users, sessions)
+	if members != 0 || users != 1 || sessions != 0 {
+		t.Fatalf("group deletion left access or deleted user: members=%d users=%d active sessions=%d", members, users, sessions)
 	}
 }
 
@@ -703,5 +703,107 @@ func TestGrantForeignKeysEffectiveAccessAndRevocation(t *testing.T) {
 	var remaining int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM group_database_access`).Scan(&remaining); err != nil || remaining != 0 {
 		t.Fatalf("orphan grants after connection delete: %d, %v", remaining, err)
+	}
+}
+
+func TestAccessRevocationInvalidatesSessions(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "initial-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "initial-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	member, err := s.CreateUser(ctx, admin, "member", "member-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateUser(ctx, admin, "other", "other-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "Editors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, member, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO database_connections (name, host, port, database_name, username, ssl_mode, password_ciphertext) VALUES ('Target', 'localhost', 5432, 'target_db', 'postgres', 'disable', $1)`, bytes.Repeat([]byte{1}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetGrant(ctx, admin, group, "1", contracts.AccessViewEdit); err != nil {
+		t.Fatal(err)
+	}
+	newSession := func(user contracts.UserID) int64 {
+		t.Helper()
+		var id int64
+		if err := db.QueryRowContext(ctx, `INSERT INTO sessions (user_id,created_at,last_seen_at,absolute_expires_at,rotated_at) VALUES ($1,now(),now(),now()+interval '12 hours',now()) RETURNING id`, user).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO session_tokens (token_hash,session_id) VALUES ($1,$2)`, bytes.Repeat([]byte{byte(id)}, 32), id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	active := func(id int64) bool {
+		t.Helper()
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM session_tokens WHERE session_id=$1`, id).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		return count > 0
+	}
+
+	first, unaffected := newSession(member), newSession(other)
+	if err := s.SetGrant(ctx, admin, group, "1", contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	if active(first) || !active(unaffected) {
+		t.Fatal("grant downgrade did not revoke only affected member")
+	}
+	second := newSession(member)
+	if err := s.SetGrant(ctx, admin, group, "1", contracts.AccessViewOnly); err != nil || !active(second) {
+		t.Fatalf("unchanged grant revoked session: %v", err)
+	}
+	if err := s.SetGrant(ctx, admin, group, "999999", contracts.AccessViewEdit); !errors.Is(err, platform.ErrNotFound) || !active(second) {
+		t.Fatalf("failed grant mutation revoked session: %v", err)
+	}
+	if err := s.SetMembership(ctx, admin, member, group, false); err != nil {
+		t.Fatal(err)
+	}
+	if active(second) || !active(unaffected) {
+		t.Fatal("membership removal did not revoke only affected member")
+	}
+	if err := s.SetMembership(ctx, admin, member, group, true); err != nil {
+		t.Fatal(err)
+	}
+	third := newSession(member)
+	if err := s.SetGrant(ctx, admin, group, "1", contracts.AccessNone); err != nil {
+		t.Fatal(err)
+	}
+	if active(third) || !active(unaffected) {
+		t.Fatal("grant deletion did not revoke only affected member")
+	}
+	if err := s.SetGrant(ctx, admin, group, "1", contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	elevated := newSession(member)
+	if err := s.SetGrant(ctx, admin, group, "1", contracts.AccessViewEdit); err != nil {
+		t.Fatal(err)
+	}
+	if active(elevated) || !active(unaffected) {
+		t.Fatal("grant elevation did not rotate by revoking affected session")
+	}
+	fourth := newSession(member)
+	if err := s.DeleteGroup(ctx, admin, group); err != nil {
+		t.Fatal(err)
+	}
+	if active(fourth) || !active(unaffected) {
+		t.Fatal("group deletion did not revoke only affected member")
 	}
 }

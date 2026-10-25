@@ -143,6 +143,7 @@ func TestPostgresStaleDraftFailureCannotOverwriteApplied(t *testing.T) {
 	type outcome struct {
 		version int64
 		err     error
+		run     bool
 	}
 	results := make(chan outcome, 2)
 	var group sync.WaitGroup
@@ -153,11 +154,11 @@ func TestPostgresStaleDraftFailureCannotOverwriteApplied(t *testing.T) {
 			<-start
 			if run {
 				record, err := store.RunNew(ctx, "direct", "SELECT 1", "editor", time.Now())
-				results <- outcome{record.Version, err}
+				results <- outcome{version: record.Version, err: err, run: true}
 				return
 			}
 			record, err := store.CreateDraft(ctx, "draft", "SELECT 1", "editor", time.Now())
-			results <- outcome{record.Version, err}
+			results <- outcome{version: record.Version, err: err}
 		}(run)
 	}
 	close(start)
@@ -166,12 +167,86 @@ func TestPostgresStaleDraftFailureCannotOverwriteApplied(t *testing.T) {
 	versions := make(map[int64]bool)
 	for result := range results {
 		if result.err != nil {
-			t.Fatal(result.err)
+			if !result.run || !errors.Is(result.err, ErrMigrationOrder) {
+				t.Fatal(result.err)
+			}
+			continue // Direct run is rejected if the draft acquired the history lock first.
 		}
 		versions[result.version] = true
 	}
-	if len(versions) != 2 || !versions[2] || !versions[3] {
-		t.Fatalf("concurrent creation used versions %v, want 2 and 3", versions)
+	if !versions[2] || len(versions) > 2 || len(versions) == 2 && !versions[3] {
+		t.Fatalf("concurrent creation used versions %v, want 2 (and 3 only if ordered)", versions)
+	}
+}
+
+func TestPostgresMigrationExecutionRequiresAppliedPredecessors(t *testing.T) {
+	dsn := os.Getenv("MIGRATION_READONLY_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set MIGRATION_READONLY_TEST_DATABASE_URL to a disposable PostgreSQL database without if3110_platform")
+	}
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal("invalid test database URL")
+	}
+	db := stdlib.OpenDB(*config)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	var schema sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT to_regnamespace('if3110_platform')::text`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Valid {
+		t.Skip("history schema already exists; refusing to modify it")
+	}
+	t.Cleanup(func() {
+		if _, err := db.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS if3110_platform CASCADE`); err != nil {
+			t.Errorf("clean up test-owned schema: %v", err)
+		}
+	})
+	store, err := NewPostgresStore(db, "db-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.CreateDraft(ctx, "first", "SELECT 1", "editor", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.CreateDraft(ctx, "second", "SELECT 1", "editor", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ExecuteDraft(ctx, second.Version, "editor", time.Now(), reviewedDraft(second)); !errors.Is(err, ErrMigrationOrder) {
+		t.Fatalf("executed version 2 before draft version 1: %v", err)
+	}
+	if _, err := store.RunNew(ctx, "direct", "SELECT 1", "editor", time.Now()); !errors.Is(err, ErrMigrationOrder) {
+		t.Fatalf("direct run bypassed older drafts: %v", err)
+	}
+	if _, err := store.ExecuteDraft(ctx, first.Version, "editor", time.Now(), reviewedDraft(first)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ExecuteDraft(ctx, second.Version, "editor", time.Now(), reviewedDraft(second)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.List(ctx)
+	if err != nil || len(items) != 2 || items[0].Status != StatusApplied || items[1].Status != StatusApplied {
+		t.Fatalf("history after ordered execution = %+v, %v", items, err)
+	}
+	failed, err := store.RunNew(ctx, "broken", "SELECT * FROM table_that_does_not_exist", "editor", time.Now())
+	if err == nil || failed.Status != StatusFailed {
+		t.Fatalf("expected failed migration record: %+v, %v", failed, err)
+	}
+	next, err := store.CreateDraft(ctx, "next", "SELECT 1", "editor", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ExecuteDraft(ctx, next.Version, "editor", time.Now(), reviewedDraft(next)); !errors.Is(err, ErrMigrationOrder) {
+		t.Fatalf("draft after FAILED predecessor executed: %v", err)
+	}
+	if _, err := store.RunNew(ctx, "direct", "SELECT 1", "editor", time.Now()); !errors.Is(err, ErrMigrationOrder) {
+		t.Fatalf("direct run after FAILED predecessor executed: %v", err)
 	}
 }
 

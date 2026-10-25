@@ -166,17 +166,21 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 		t.Fatalf("applied2 = %+v, want version 2 APPLIED", applied2)
 	}
 
-	// 3. jalankan migration versi 3 yang gagal di tengah jalan (skenario gagal wajib rollback)
+	// 3. buat draft versi 3 yang gagal saat dieksekusi (uji rollback dari draft)
 	fixedNow = fixedNow.Add(time.Minute)
-	failed3, execErr := svc.RunMigration(
+	draft3, err := svc.CreateDraft(
 		ctx,
 		editorUser,
 		targetDB,
-		"migrasi rusak harus rollback",
-		`INSERT INTO books (id, title) VALUES (3, 'Buku Harus Batal'); SELECT * FROM tabel_tidak_ada_sama_sekali;`,
+		"draft gagal saat dieksekusi",
+		`INSERT INTO books (id, title) VALUES (3, 'Draft Batal'); INSERT INTO books (id, title) VALUES (1, 'Duplikat PK');`,
 	)
+	if err != nil || draft3.Version != 3 || draft3.Status != StatusDraft {
+		t.Fatalf("CreateDraft(3) = %+v, %v", draft3, err)
+	}
+	failed3, execErr := svc.ExecuteMigration(ctx, editorUser, targetDB, 3, reviewedDraft(draft3))
 	if execErr == nil {
-		t.Fatal("RunMigration(3) expected SQL execution error, got nil")
+		t.Fatal("ExecuteMigration(3) expected SQL execution error")
 	}
 	if failed3.Version != 3 || failed3.Status != StatusFailed || failed3.ExecutedBy != editorUser || failed3.ErrorMessage == "" || failed3.ExecutedAt == nil {
 		t.Fatalf("failed3 = %+v, want version 3 FAILED with error message", failed3)
@@ -191,29 +195,10 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 		t.Fatalf("books row count after rollback = %d, want 2", bookCount)
 	}
 
-	// 4. buat draft versi 4 yang sql-nya gagal saat ExecuteMigration (uji rollback dari draft)
+	// FAILED tidak bisa dilewati oleh versi yang lebih baru.
 	fixedNow = fixedNow.Add(time.Minute)
-	draft4, err := svc.CreateDraft(
-		ctx,
-		editorUser,
-		targetDB,
-		"draft gagal saat dieksekusi",
-		`INSERT INTO books (id, title) VALUES (4, 'Draft Batal'); INSERT INTO books (id, title) VALUES (1, 'Duplikat PK');`,
-	)
-	if err != nil {
-		t.Fatalf("CreateDraft(4) error = %v", err)
-	}
-	if draft4.Version != 4 || draft4.Status != StatusDraft {
-		t.Fatalf("draft4 = %+v, want version 4 DRAFT", draft4)
-	}
-
-	fixedNow = fixedNow.Add(time.Minute)
-	failed4, execErr4 := svc.ExecuteMigration(ctx, editorUser, targetDB, 4, reviewedDraft(draft4))
-	if execErr4 == nil {
-		t.Fatal("ExecuteMigration(4) expected duplicate key error, got nil")
-	}
-	if failed4.Version != 4 || failed4.Status != StatusFailed || failed4.ErrorMessage == "" {
-		t.Fatalf("failed4 = %+v, want version 4 FAILED", failed4)
+	if _, err := svc.RunMigration(ctx, editorUser, targetDB, "must wait", "SELECT 1"); !errors.Is(err, ErrMigrationOrder) {
+		t.Fatalf("RunMigration after FAILED predecessor: %v", err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM books`).Scan(&bookCount); err != nil {
 		t.Fatalf("count books after draft rollback error = %v", err)
@@ -227,13 +212,12 @@ func TestPostgresMigrationServiceCommitAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListHistory() by viewer error = %v", err)
 	}
-	if len(history) != 4 {
-		t.Fatalf("len(history) = %d, want 4", len(history))
+	if len(history) != 3 {
+		t.Fatalf("len(history) = %d, want 3", len(history))
 	}
 	if history[0].Version != 1 || history[0].Status != StatusApplied ||
 		history[1].Version != 2 || history[1].Status != StatusApplied ||
-		history[2].Version != 3 || history[2].Status != StatusFailed ||
-		history[3].Version != 4 || history[3].Status != StatusFailed {
+		history[2].Version != 3 || history[2].Status != StatusFailed {
 		t.Fatalf("unexpected linear history = %+v", history)
 	}
 

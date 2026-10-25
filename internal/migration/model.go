@@ -36,6 +36,7 @@ var (
 	ErrInvalidUser             = errors.New("user ID is required")
 	ErrInvalidVersion          = errors.New("migration version must be positive")
 	ErrMigrationAlreadyApplied = errors.New("migration has already been executed and cannot be modified")
+	ErrMigrationOrder          = errors.New("earlier migrations must be applied before execution")
 	ErrVersionConflict         = errors.New("migration version conflict")
 )
 

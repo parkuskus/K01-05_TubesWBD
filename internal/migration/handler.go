@@ -366,6 +366,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error) {
 		http.Error(w, "migration tidak ditemukan", http.StatusNotFound)
 	case errors.Is(err, ErrMigrationAlreadyApplied):
 		http.Error(w, "migration sudah pernah dieksekusi", http.StatusConflict)
+	case errors.Is(err, ErrMigrationOrder):
+		http.Error(w, "Migration sebelumnya harus berstatus APPLIED sebelum versi ini dijalankan.", http.StatusConflict)
 	case errors.Is(err, ErrVersionConflict):
 		http.Error(w, "Draft berubah sejak ditinjau. Muat ulang detail migration dan periksa SQL sebelum menjalankan.", http.StatusConflict)
 	case errors.Is(err, ErrInvalidSQL), errors.Is(err, ErrInvalidVersion), errors.Is(err, ErrInvalidDatabaseID):

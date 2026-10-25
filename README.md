@@ -128,6 +128,8 @@ Saat startup, `cmd/web` memuat konfigurasi, menghubungi `PLATFORM_DATABASE_URL`,
 
 `View Only` boleh membaca schema, data, dan riwayat; `View + Edit` juga boleh mengelola migration. Eksekusi SQL berhasil dicatat sebagai `APPLIED`; kegagalan melakukan rollback perubahan dalam transaksi dan mencatat `FAILED`. Pemeriksaan izin selalu dilakukan di backend; menyembunyikan tombol saja bukan kontrol akses. Tidak ada editor data baris per baris atau dukungan DBMS selain PostgreSQL.
 
+Migration hanya dapat dijalankan bila **semua versi sebelumnya `APPLIED`**. Versi yang masih `DRAFT` atau berstatus `FAILED` menghalangi eksekusi berikutnya; saat ini belum ada alur untuk mengulang atau memperbaiki versi `FAILED`, sehingga jangan menjalankan migration gagal pada database yang perlu terus dimigrasikan tanpa rencana pemulihan.
+
 ## Model akses dan kontrak antarmodul
 
 Package `internal/contracts/` menyediakan tipe `UserID`, `GroupID`, `DatabaseID`, `AccessLevel`, dan `DatabaseAction`, serta interface `Authorizer` dan `DatabaseProvider`. Kontrak ini memisahkan authorization dari koneksi database:
@@ -143,6 +145,8 @@ Package `internal/contracts/` menyediakan tipe `UserID`, `GroupID`, `DatabaseID`
 Riwayat migration disimpan **di setiap database target**, bukan di database platform, dalam schema khusus `if3110_platform` dengan tabel `migration_history` (`if3110_platform.migration_history`). Schema tersebut dicadangkan untuk metadata aplikasi; implementasi dan tabel dimiliki modul migration.
 
 `ui.Layout` menyediakan kerangka HTML bersama; `internal/web` memasang route dan middleware. Handler modul mempertahankan pemeriksaan izin sendiri. Keputusan **grant tertinggi menang** sudah diterapkan, tetapi masih perlu persetujuan akhir tim sebelum disebut kebijakan final. Kebijakan sesi: idle 30 menit, umur maksimal 12 jam, rotasi 15 menit, grace period 30 detik.
+
+Perubahan keanggotaan/grant yang benar-benar mengubah akses dan penghapusan grup mencabut sesi anggota terdampak pada transaksi yang sama. Pengguna tersebut perlu login kembali; perubahan idempoten tidak mencabut sesi.
 
 ## Test dan pemeriksaan
 

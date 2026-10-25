@@ -202,6 +202,14 @@ func setupTestMigrationHandler(t *testing.T, svc MigrationService, activeUser *c
 	return protected
 }
 
+func TestMigrationOrderConflictDoesNotExposeSQL(t *testing.T) {
+	w := httptest.NewRecorder()
+	(&Handler{}).writeServiceError(w, ErrMigrationOrder)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "APPLIED") || strings.Contains(w.Body.String(), "SELECT") {
+		t.Fatalf("order conflict response = %d %q", w.Code, w.Body.String())
+	}
+}
+
 func TestHandlerRejectsUnauthenticatedRequests(t *testing.T) {
 	authz := newFakeAuthorizer()
 	svc := newFakeMigrationService(authz)

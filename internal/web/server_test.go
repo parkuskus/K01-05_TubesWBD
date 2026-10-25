@@ -218,9 +218,8 @@ func TestHomePageHidesAdminLinksFromNonAdmin(t *testing.T) {
 func TestMountedRoutesEnforceSessionCSRFAndMigrationPrecedence(t *testing.T) {
 	handler, sessions, _ := newFullTestServer(t)
 
-	// 1. Without an active session, all protected GET routes return 401.
+	// 1. Without an active session, protected GET routes other than home return 401.
 	for _, path := range []string{
-		"/",
 		"/platform/users",
 		"/platform/groups",
 		"/databases/",
