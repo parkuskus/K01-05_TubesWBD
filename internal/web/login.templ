@@ -13,30 +13,28 @@ templ login(csrfToken string, errorMessage string) {
 			<nav class="global-nav" aria-label="Identitas platform">
 				<div class="global-nav-inner">
 					<span class="global-nav-brand">Teras Data</span>
-					<span class="global-nav-meta">IF3110 · Milestone 1</span>
 				</div>
 			</nav>
-			<main class="auth-shell">
-				<header class="auth-header">
-					<p class="eyebrow">Akses Platform</p>
+			<main class="auth-center">
+				<section class="auth-shell" aria-label="Formulir masuk">
 					<h1>Masuk</h1>
-					<p class="auth-lead">Gunakan akun platform Anda untuk menelusuri schema, data, dan riwayat migration PostgreSQL.</p>
-				</header>
-				if errorMessage != "" {
-					<p class="error-message" role="alert">{ errorMessage }</p>
-				}
-				<form class="auth-form" action="/login" method="post">
-					<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
-					<div class="form-field">
-						<label for="username">Username</label>
-						<input id="username" name="username" type="text" placeholder="Username" autocomplete="username" required autofocus/>
-					</div>
-					<div class="form-field">
-						<label for="password">Password</label>
-						<input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required/>
-					</div>
-					<button type="submit">Masuk</button>
-				</form>
+					<p class="auth-lead">Masuk menggunakan akun platform Anda.</p>
+					if errorMessage != "" {
+						<p class="error-message" role="alert">{ errorMessage }</p>
+					}
+					<form class="auth-form" action="/login" method="post">
+						<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
+						<div class="form-field">
+							<label for="username">Username</label>
+							<input id="username" name="username" type="text" placeholder="Username" autocomplete="username" required autofocus/>
+						</div>
+						<div class="form-field">
+							<label for="password">Password</label>
+							<input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required/>
+						</div>
+						<button type="submit">Masuk</button>
+					</form>
+				</section>
 			</main>
 		</body>
 	</html>

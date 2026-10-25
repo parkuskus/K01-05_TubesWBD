@@ -1,94 +1,83 @@
-/* Apple Design System — Database Explorer, Schema Inspector, and Data Grid */
+/* tasteskill v2 Anti-Slop Art Direction — Database Explorer, Schema Inspector, and Data Grid */
 
 body:has(main > .db-module) {
-  background-color: #f5f5f7;
+  background-color: #f6f5f1;
 }
 
 main:has(> .db-module) {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 0 0 80px;
+  padding: 0 0 120px;
 }
 
 .db-module {
-  width: min(100% - 48px, 1200px);
+  width: min(100% - 64px, 1280px);
   margin: 0 auto;
-  color: #1d1d1f;
-  font-family: "SF Pro Text", system-ui, -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
-  font-size: 17px;
+  color: #141413;
+  font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Inter", sans-serif;
+  font-size: 16px;
   font-weight: 400;
-  line-height: 1.47;
-  letter-spacing: -0.374px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
 }
 
-/* Global Black Navigation Bar (Full-Bleed) */
+/* ==========================================================================
+   Plain Top Navigation Bar & Tonal Sub-Bar (No Glass, No Bar Chrome)
+   ========================================================================== */
+
 .db-nav {
   width: 100vw;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
-  min-height: 44px;
-  padding: 0 max(24px, calc((100vw - 1200px) / 2));
-  background-color: #000000;
+  padding: 16px max(32px, calc((100vw - 1280px) / 2));
+  background-color: #141413;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
-  margin-bottom: 0;
+  gap: 28px;
 }
 
 .db-nav a {
-  color: #cccccc;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
-  font-size: 12px;
+  color: #c7c4bb;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.0;
-  letter-spacing: -0.12px;
+  line-height: 1.2;
   text-decoration: none;
-  padding: 14px 0;
   transition: color 120ms ease;
 }
 
 .db-nav a:hover {
-  color: #ffffff;
+  color: #faf9f5;
   text-decoration: none;
 }
 
-/* Frosted Sub-Nav Bar (Breadcrumb + Context) */
 .db-breadcrumb {
   width: 100vw;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
-  min-height: 52px;
-  padding: 12px max(24px, calc((100vw - 1200px) / 2));
-  background-color: rgba(245, 245, 247, 0.82);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 13px max(32px, calc((100vw - 1280px) / 2));
+  background-color: #ebe8e0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
+  gap: 10px;
   font-size: 14px;
-  font-weight: 400;
-  line-height: 1.29;
-  letter-spacing: -0.224px;
-  color: #7a7a7a;
+  color: #595750;
 }
 
 .db-breadcrumb a {
-  color: #1d1d1f;
+  color: #141413;
   text-decoration: none;
 }
 
 .db-breadcrumb a:hover {
-  color: #0066cc;
-  text-decoration: none;
+  color: #0f5247;
+  text-decoration: underline;
 }
 
 .db-breadcrumb [aria-current="page"] {
-  color: #1d1d1f;
+  color: #141413;
   font-weight: 600;
 }
 
@@ -98,61 +87,65 @@ main:has(> .db-module) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 24px 0 32px;
-  padding: 16px 24px;
-  background-color: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 18px;
+  margin: 32px 0;
+  padding: 18px 24px;
+  background-color: #ebe8e0;
+  border-radius: 6px;
 }
 
-/* Headlines & Body Copy */
+/* ==========================================================================
+   Headlines & Body Copy (Full Ink, Large Scale)
+   ========================================================================== */
+
 .db-module h1 {
-  margin: 40px 0 12px;
-  color: #1d1d1f;
-  font-family: "SF Pro Display", system-ui, -apple-system, sans-serif;
-  font-size: 40px;
+  margin: 48px 0 16px;
+  color: #141413;
+  font-size: clamp(36px, 4.2vw, 52px);
   font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.28px;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
 }
 
 .db-module h2 {
-  margin: 40px 0 16px;
-  color: #1d1d1f;
-  font-family: "SF Pro Display", system-ui, -apple-system, sans-serif;
-  font-size: 28px;
+  margin: 48px 0 16px;
+  color: #141413;
+  font-size: clamp(22px, 2.2vw, 28px);
   font-weight: 600;
-  line-height: 1.14;
-  letter-spacing: 0.196px;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
 }
 
 .db-module p {
-  max-width: 72ch;
+  max-width: 66ch;
   margin: 0 0 24px;
-  color: #333333;
+  color: #141413;
   font-size: 17px;
-  font-weight: 400;
-  line-height: 1.47;
-  letter-spacing: -0.374px;
+  line-height: 1.5;
 }
 
 .db-module > a:not(.db-button) {
   display: inline-flex;
   align-items: center;
-  margin: 0 0 20px;
-  color: #0066cc;
+  margin: 0 0 24px;
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background-color: #ebe8e0;
+  color: #141413;
   font-size: 14px;
-  font-weight: 400;
-  line-height: 1.29;
-  letter-spacing: -0.224px;
+  font-weight: 600;
   text-decoration: none;
 }
 
 .db-module > a:not(.db-button):hover {
-  text-decoration: underline;
+  background-color: #141413;
+  color: #faf9f5;
+  text-decoration: none;
 }
 
-/* Action Groups & Buttons */
+/* ==========================================================================
+   Action Groups & Buttons (Obsidian Primary, Warm Stone Secondary)
+   ========================================================================== */
+
 .db-actions {
   display: flex;
   flex-wrap: wrap;
@@ -166,30 +159,30 @@ main:has(> .db-module) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 11px 22px;
+  min-height: 42px;
+  padding: 10px 22px;
   border: 0;
   border-radius: 9999px;
-  background-color: #0066cc;
-  color: #ffffff;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
-  font-size: 17px;
-  font-weight: 400;
-  line-height: 1.0;
-  letter-spacing: -0.374px;
+  background-color: #141413;
+  color: #faf9f5;
+  font-family: "SF Pro Text", -apple-system, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.1;
   text-decoration: none;
   cursor: pointer;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition: background-color 120ms ease, transform 120ms ease;
 }
 
 .db-module > .db-button {
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .db-button:hover,
 .db-form button:hover,
 .db-module form button:hover {
-  opacity: 0.92;
+  background-color: #0f5247;
+  color: #ffffff;
   text-decoration: none;
 }
 
@@ -197,11 +190,11 @@ main:has(> .db-module) {
 .db-form button:active,
 .db-module form button:active,
 .db-actions a:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
 }
 
 button.db-danger {
-  background-color: #c92a2a;
+  background-color: #8f2424;
   color: #ffffff;
 }
 
@@ -209,23 +202,28 @@ button.db-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 8px 16px;
-  border: 1px solid #e0e0e0;
+  min-height: 36px;
+  padding: 7px 16px;
   border-radius: 9999px;
-  background-color: #fafafc;
-  color: #0066cc;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.29;
-  letter-spacing: -0.224px;
+  background-color: #ffffff;
+  color: #141413;
+  font-size: 13px;
+  font-weight: 600;
   text-decoration: none;
-  transition: transform 120ms ease, border-color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.db-context .db-actions a:not(.db-button) {
+  background-color: #ffffff;
+}
+
+.db-module table .db-actions a:not(.db-button) {
+  background-color: #ebe8e0;
 }
 
 .db-actions a:not(.db-button):hover {
-  border-color: #0066cc;
+  background-color: #141413;
+  color: #faf9f5;
   text-decoration: none;
 }
 
@@ -233,35 +231,34 @@ button.db-danger {
   display: inline-flex;
   align-items: center;
   padding: 0 12px;
-  color: #7a7a7a;
+  color: #595750;
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: -0.224px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Access Badge (Configurator Option Chip Style) */
 .db-badge {
   display: inline-flex;
   align-items: center;
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: 9999px;
-  background-color: #f5f5f7;
-  border: 1px solid #e0e0e0;
-  color: #1d1d1f;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
-  font-size: 12px;
+  background-color: #dfece7;
+  color: #0f5247;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.0;
-  letter-spacing: -0.12px;
+  line-height: 1.1;
 }
 
-/* Store Utility Card Grid (Databases, Schemas, Tables) */
+/* ==========================================================================
+   Object Index List (Databases, Schemas, Tables)
+   ========================================================================== */
+
 .db-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  gap: 16px;
   padding: 0;
-  margin: 0 0 32px;
+  margin: 0 0 40px;
   list-style: none;
 }
 
@@ -271,62 +268,54 @@ button.db-danger {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 24px;
-  border: 1px solid #e0e0e0;
-  border-radius: 18px;
+  padding: 22px 24px;
   background-color: #ffffff;
-  transition: border-color 140ms ease;
+  border: 1px solid #dcd8ce;
+  border-radius: 6px;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .db-list li:hover {
-  border-color: #0066cc;
+  background-color: #ebe8e0;
+  border-color: #141413;
 }
 
 .db-list li a {
-  color: #1d1d1f;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
-  font-size: 17px;
+  color: #141413;
+  font-size: 18px;
   font-weight: 600;
-  line-height: 1.24;
-  letter-spacing: -0.374px;
-  text-decoration: none;
-}
-
-.db-list li a:hover {
-  color: #0066cc;
+  line-height: 1.25;
   text-decoration: none;
 }
 
 .db-list li small {
   padding: 4px 10px;
   border-radius: 9999px;
-  background-color: #f5f5f7;
-  color: #7a7a7a;
+  background-color: #ebe8e0;
+  color: #595750;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1.0;
-  letter-spacing: -0.12px;
 }
 
-/* Forms (Store Utility Card) */
+/* ==========================================================================
+   Forms
+   ========================================================================== */
+
 .db-form {
   display: grid;
   gap: 8px;
   max-width: 640px;
-  margin: 0 0 32px;
+  margin: 0 0 40px;
   padding: 32px;
-  border: 1px solid #e0e0e0;
-  border-radius: 18px;
-  background-color: #ffffff;
+  background-color: #ebe8e0;
+  border-radius: 6px;
 }
 
 .db-form label {
   margin-top: 12px;
-  color: #1d1d1f;
+  color: #141413;
   font-size: 14px;
   font-weight: 600;
-  line-height: 1.29;
-  letter-spacing: -0.224px;
 }
 
 .db-form label:first-of-type {
@@ -337,38 +326,33 @@ button.db-danger {
 .db-form select {
   width: 100%;
   min-height: 44px;
-  padding: 11px 16px;
-  border: 1px solid #e0e0e0;
-  border-radius: 11px;
+  padding: 10px 14px;
+  border: 1px solid #cfcac0;
+  border-radius: 6px;
   background-color: #ffffff;
-  color: #1d1d1f;
-  font-family: "SF Pro Text", system-ui, -apple-system, sans-serif;
-  font-size: 17px;
-  font-weight: 400;
-  line-height: 1.24;
-  letter-spacing: -0.374px;
+  color: #141413;
+  font-size: 16px;
 }
 
 .db-form input:focus,
 .db-form select:focus {
-  border-color: #0071e3;
+  border-color: #141413;
 }
 
 .db-form input[aria-invalid="true"],
 .db-form select[aria-invalid="true"] {
-  border-color: #c92a2a;
-  background-color: #fff5f5;
+  border-color: #8f2424;
+  background-color: #f7efef;
 }
 
 .db-form small {
-  color: #7a7a7a;
-  font-size: 12px;
-  line-height: 1.3;
-  letter-spacing: -0.12px;
+  color: #595750;
+  font-size: 13px;
+  line-height: 1.38;
 }
 
 .db-field-error {
-  color: #c92a2a !important;
+  color: #8f2424 !important;
   font-weight: 600;
 }
 
@@ -379,65 +363,69 @@ button.db-danger {
 .db-form .db-actions {
   margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #d4d0c5;
 }
 
-/* Data Grid & Tables */
+/* ==========================================================================
+   Data Grid & Structure Tables (Sentence Case Headers, Tabular Figures)
+   ========================================================================== */
+
 .db-scroll {
   width: 100%;
   overflow-x: auto;
-  margin: 0 0 24px;
-  border: 1px solid #e0e0e0;
-  border-radius: 18px;
+  margin: 0 0 28px;
   background-color: #ffffff;
+  border: 1px solid #dcd8ce;
+  border-radius: 6px;
 }
 
 .db-module table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
-  line-height: 1.43;
-  letter-spacing: -0.224px;
+  font-size: 15px;
+  line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
 
 .db-module caption {
-  padding: 16px 24px;
-  border-bottom: 1px solid #f0f0f0;
-  background-color: #fafafc;
-  color: #7a7a7a;
-  font-size: 12px;
+  padding: 15px 22px;
+  background-color: #f1efe9;
+  border-bottom: 1px solid #dcd8ce;
+  color: #595750;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 1.0;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   text-align: left;
 }
 
 .db-module thead th {
-  padding: 14px 20px;
-  border-bottom: 1px solid #e0e0e0;
-  background-color: #f5f5f7;
-  color: #1d1d1f;
-  font-size: 12px;
+  padding: 15px 22px;
+  background-color: #ebe8e0;
+  color: #141413;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 1.0;
-  letter-spacing: -0.12px;
   text-align: left;
+  border-bottom: 1px solid #dcd8ce;
+  border-right: 1px solid #e2dfd6;
   white-space: nowrap;
+}
+
+.db-module thead th:last-child {
+  border-right: 0;
 }
 
 .db-module tbody th,
 .db-module tbody td {
-  padding: 14px 20px;
-  border-bottom: 1px solid #f0f0f0;
-  color: #1d1d1f;
+  padding: 16px 22px;
+  border-bottom: 1px solid #e6e3da;
+  border-right: 1px solid #efede7;
+  color: #141413;
   text-align: left;
   vertical-align: top;
 }
 
-.db-module tbody th {
-  font-weight: 600;
+.db-module tbody th:last-child,
+.db-module tbody td:last-child {
+  border-right: 0;
 }
 
 .db-module tbody tr:last-child th,
@@ -445,33 +433,35 @@ button.db-danger {
   border-bottom: 0;
 }
 
+.db-module tbody th {
+  font-weight: 600;
+}
+
 .db-module tbody tr:hover th,
 .db-module tbody tr:hover td {
-  background-color: #fafafc;
+  background-color: #faf9f6;
 }
 
 .db-connection-id {
   display: block;
   margin-top: 4px;
-  color: #7a7a7a;
-  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  color: #595750;
+  font-size: 13px;
   font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 .db-null {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 5px;
-  background-color: #f5f5f7;
-  color: #7a7a7a;
-  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border-radius: 4px;
+  background-color: #ebe8e0;
+  color: #595750;
   font-size: 12px;
   font-style: normal;
   font-weight: 600;
 }
 
-.db-value,
 .db-module code {
   font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
@@ -481,39 +471,37 @@ button.db-danger {
 .db-definitions {
   display: grid;
   gap: 12px;
-  margin: 0 0 32px;
+  margin: 0 0 40px;
 }
 
 .db-definitions dt {
-  padding: 16px 24px 6px;
-  border: 1px solid #e0e0e0;
-  border-bottom: 0;
-  border-radius: 18px 18px 0 0;
+  padding: 16px 22px 6px;
   background-color: #ffffff;
-  color: #1d1d1f;
-  font-size: 14px;
+  border: 1px solid #dcd8ce;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  color: #141413;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: -0.224px;
 }
 
 .db-definitions dd {
   margin: -12px 0 0;
-  padding: 0 24px 16px;
-  border: 1px solid #e0e0e0;
-  border-top: 0;
-  border-radius: 0 0 18px 18px;
+  padding: 0 22px 16px;
   background-color: #ffffff;
-  color: #333333;
+  border: 1px solid #dcd8ce;
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  color: #141413;
   overflow-x: auto;
 }
 
-/* Dark SQL Tile for Schema Diff */
 pre.db-scroll {
   padding: 24px;
   border: 0;
-  border-radius: 18px;
-  background-color: #252527;
-  color: #ffffff;
+  border-radius: 6px;
+  background-color: #141413;
+  color: #faf9f5;
   font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 14px;
   line-height: 1.6;
@@ -523,24 +511,21 @@ pre.db-scroll {
 .db-notice,
 .db-alert,
 .db-empty {
-  padding: 20px 24px;
-  margin: 0 0 24px;
-  border-radius: 18px;
-  border: 1px solid #e0e0e0;
-  background-color: #ffffff;
+  padding: 22px 26px;
+  margin: 0 0 28px;
+  border-radius: 6px;
+  background-color: #ebe8e0;
 }
 
 .db-notice {
-  border-color: #b7ebc6;
-  background-color: #f2fbf5;
-  color: #1e7e34;
+  background-color: #dfece7;
+  color: #0f5247;
   font-weight: 600;
 }
 
 .db-alert {
-  border-color: #f5c2c7;
-  background-color: #fff5f5;
-  color: #c92a2a;
+  background-color: #f4e3e3;
+  color: #8f2424;
   font-weight: 600;
 }
 
@@ -556,14 +541,9 @@ td strong.db-alert {
   margin-bottom: 0;
 }
 
-@media (max-width: 833px) {
+@media (max-width: 900px) {
   .db-module {
     width: calc(100% - 32px);
-  }
-
-  .db-module h1 {
-    font-size: 34px;
-    margin-top: 28px;
   }
 
   .db-list {
@@ -576,10 +556,6 @@ td strong.db-alert {
 }
 
 @media (max-width: 480px) {
-  .db-module h1 {
-    font-size: 28px;
-  }
-
   .db-actions a,
   .db-actions button,
   .db-button {

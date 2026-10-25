@@ -83,27 +83,17 @@ func homeContent(csrfToken string, isAdmin bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\">Keluar</button></form></div></div></div><header class=\"home-hero\"><div class=\"home-hero-inner\"><p class=\"eyebrow\">IF3110 · Milestone 1</p><h1>Database Management Platform</h1><p class=\"home-lead\">Eksplorasi schema, inspeksi data berhalaman, dan eksekusi migration SQL transaksional dengan kendali akses berbasis grup.</p><div class=\"home-hero-actions\"><a class=\"button-primary\" href=\"/databases/\">Buka Database</a> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\">Keluar</button></form></div></div></div><div class=\"home-frame\"><header class=\"home-header\"><h1>Database Management Platform</h1><p class=\"home-lead\">Pilih database untuk melihat schema, tabel, dan data, atau kelola pengguna dan hak akses.</p></header><div class=\"home-grid\"><section class=\"home-card\" aria-label=\"Database\"><div><h2>Database</h2><p>Lihat daftar database, struktur tabel, isi data, dan riwayat migration SQL.</p></div><div class=\"home-actions\"><a class=\"button-primary\" href=\"/databases/\">Pilih database</a></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if isAdmin {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<a class=\"button-secondary-pill\" href=\"/databases/connections/\">Kelola Koneksi</a>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section class=\"home-card\" aria-label=\"Administrasi\"><div><h2>Administrasi</h2><p>Kelola akun pengguna, grup akses, dan koneksi database.</p></div><nav class=\"home-actions\" aria-label=\"Pintasan administrasi\"><a class=\"home-row-action\" href=\"/platform/users\">Pengguna</a> <a class=\"home-row-action\" href=\"/platform/groups\">Grup dan akses</a> <a class=\"home-row-action\" href=\"/databases/connections/\">Koneksi database</a></nav></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div></header><div class=\"home-grid-section\"><div class=\"home-grid\"><section class=\"home-card\" aria-label=\"Eksplorasi database\"><div class=\"home-card-head\"><p class=\"card-kicker\">Workspace Utama</p><h2>Database dan Migration</h2><p>Telusuri daftar database PostgreSQL yang diizinkan bagi grup Anda, periksa struktur kolom, constraint, index, baris data, serta riwayat migration linear.</p></div><div class=\"home-actions\"><a class=\"button-primary\" href=\"/databases/\">Pilih database</a></div></section>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if isAdmin {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<section class=\"home-card\" aria-label=\"Administrasi platform\"><div class=\"home-card-head\"><p class=\"card-kicker\">Tata Kelola</p><h2>Administrasi Platform</h2><p>Kelola akun pengguna, grup, koneksi PostgreSQL, dan hak akses grup. Status Platform Admin terpisah dari izin akses ke isi database target.</p></div><nav class=\"home-actions\" aria-label=\"Pintasan administrasi\"><a class=\"home-link\" href=\"/platform/users\">Pengguna</a> <a class=\"home-link\" href=\"/platform/groups\">Grup dan akses</a> <a class=\"home-link\" href=\"/databases/connections/\">Koneksi database</a></nav></section>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

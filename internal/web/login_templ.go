@@ -29,7 +29,7 @@ func login(csrfToken string, errorMessage string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"id\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Masuk · Database Management Platform</title><link rel=\"stylesheet\" href=\"/static/styles.css\"></head><body class=\"auth-body\"><nav class=\"global-nav\" aria-label=\"Identitas platform\"><div class=\"global-nav-inner\"><span class=\"global-nav-brand\">Teras Data</span> <span class=\"global-nav-meta\">IF3110 · Milestone 1</span></div></nav><main class=\"auth-shell\"><header class=\"auth-header\"><p class=\"eyebrow\">Akses Platform</p><h1>Masuk</h1><p class=\"auth-lead\">Gunakan akun platform Anda untuk menelusuri schema, data, dan riwayat migration PostgreSQL.</p></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"id\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Masuk · Database Management Platform</title><link rel=\"stylesheet\" href=\"/static/styles.css\"></head><body class=\"auth-body\"><nav class=\"global-nav\" aria-label=\"Identitas platform\"><div class=\"global-nav-inner\"><span class=\"global-nav-brand\">Teras Data</span></div></nav><main class=\"auth-center\"><section class=\"auth-shell\" aria-label=\"Formulir masuk\"><h1>Masuk</h1><p class=\"auth-lead\">Masuk menggunakan akun platform Anda.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -41,7 +41,7 @@ func login(csrfToken string, errorMessage string) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(errorMessage)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 26, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 23, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -59,13 +59,13 @@ func login(csrfToken string, errorMessage string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 29, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/login.templ`, Line: 26, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"form-field\"><label for=\"username\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" placeholder=\"Username\" autocomplete=\"username\" required autofocus></div><div class=\"form-field\"><label for=\"password\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" placeholder=\"Password\" autocomplete=\"current-password\" required></div><button type=\"submit\">Masuk</button></form></main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"form-field\"><label for=\"username\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" placeholder=\"Username\" autocomplete=\"username\" required autofocus></div><div class=\"form-field\"><label for=\"password\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" placeholder=\"Password\" autocomplete=\"current-password\" required></div><button type=\"submit\">Masuk</button></form></section></main></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
