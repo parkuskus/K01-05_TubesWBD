@@ -93,7 +93,7 @@ func New(config Config) (http.Handler, error) {
 	}
 
 	if config.Databases != nil {
-		databaseHandler, err := database.NewHandler(config.Databases, ui.Layout)
+		databaseHandler, err := database.NewHandler(config.Databases, ui.Layout, config.Migrations)
 		if err != nil {
 			return nil, err
 		}

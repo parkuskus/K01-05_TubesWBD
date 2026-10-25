@@ -337,17 +337,142 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 		t.Fatalf("execute draft status=%d location=%q body=%s", execResp.Code, execResp.Header().Get("Location"), execResp.Body.String())
 	}
 
-	// Failing SQL migration rolls back partial writes and records FAILED status.
-	failToken := editorClient.csrfFrom("/databases/1/migrations/new")
-	failResp := editorClient.post("/databases/1/migrations", url.Values{
-		"title":              {"broken migration"},
-		"sql_text":           {"INSERT INTO " + qualifiedTable + " VALUES (2, 'ShouldRollback'); SELECT * FROM non_existent_table_xyz;"},
-		"action":             {"run"},
-		"confirm_execute":    {"true"},
+	// Generated SQL must go through the same editable draft and reviewed execution path.
+	referenceSchema, destinationSchema := targetSchema+"_ref", targetSchema+"_dst"
+	refTable := pgx.Identifier{referenceSchema, "items"}.Sanitize()
+	dstTable := pgx.Identifier{destinationSchema, "items"}.Sanitize()
+	if _, err := targetDB.ExecContext(ctx, `CREATE SCHEMA `+pgx.Identifier{referenceSchema}.Sanitize()+`; CREATE SCHEMA `+pgx.Identifier{destinationSchema}.Sanitize()+`; CREATE TABLE `+refTable+` (id integer, label text); CREATE TABLE `+dstTable+` (id integer)`); err != nil {
+		t.Fatal("could not create disposable diff fixtures")
+	}
+	t.Cleanup(func() {
+		for _, schema := range []string{referenceSchema, destinationSchema} {
+			if _, err := targetDB.ExecContext(context.Background(), `DROP SCHEMA `+pgx.Identifier{schema}.Sanitize()+` CASCADE`); err != nil {
+				t.Error("could not remove disposable diff fixture")
+			}
+		}
+	})
+	diffPath := "/databases/1/schemas/diff?reference=" + url.QueryEscape(referenceSchema) + "&target=" + url.QueryEscape(destinationSchema)
+	diffPage := editorClient.get(diffPath)
+	if diffPage.Code != http.StatusOK || !strings.Contains(diffPage.Body.String(), "Buat draft migration") || !strings.Contains(diffPage.Body.String(), "ADD COLUMN") {
+		t.Fatalf("editor diff page status=%d or missing candidate/draft action", diffPage.Code)
+	}
+	_, diffToken := extractCSRF(t, diffPage)
+	generated := editorClient.post("/databases/1/schemas/diff", url.Values{
+		"reference": {referenceSchema}, "target": {destinationSchema}, "gorilla.csrf.Token": {diffToken},
+	})
+	if generated.Code != http.StatusSeeOther || generated.Header().Get("Location") != "/databases/1/migrations/2" {
+		t.Fatalf("generated draft status=%d location=%q", generated.Code, generated.Header().Get("Location"))
+	}
+	generatedPath := generated.Header().Get("Location")
+	detail := editorClient.get(generatedPath)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "ADD COLUMN") || !strings.Contains(detail.Body.String(), "DRAFT") {
+		t.Fatalf("generated draft detail status=%d or SQL/status missing", detail.Code)
+	}
+	_, reviewToken := extractCSRF(t, detail)
+	reviewStart := strings.Index(detail.Body.String(), reviewField)
+	if reviewStart < 0 {
+		t.Fatal("generated draft review field missing")
+	}
+	oldReview := strings.SplitN(detail.Body.String()[reviewStart+len(reviewField):], `"`, 2)[0]
+	if resp := editorClient.post(generatedPath+"/execute", url.Values{
+		"reviewed_draft": {oldReview}, "gorilla.csrf.Token": {reviewToken},
+	}); resp.Code != http.StatusBadRequest {
+		t.Fatalf("generated draft without confirmation status=%d", resp.Code)
+	}
+	var columnCount int
+	countColumns := func() int {
+		t.Helper()
+		if err := targetDB.QueryRowContext(ctx, `SELECT count(*) FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname='items' AND a.attname='label' AND a.attnum>0 AND NOT a.attisdropped`, destinationSchema).Scan(&columnCount); err != nil {
+			t.Fatal(err)
+		}
+		return columnCount
+	}
+	if countColumns() != 0 {
+		t.Fatal("diff GET/draft changed destination table")
+	}
+	// A later version cannot overtake the generated draft.
+	newToken := editorClient.csrfFrom("/databases/1/migrations/new")
+	third := editorClient.post("/databases/1/migrations", url.Values{"title": {"later"}, "sql_text": {"SELECT 1;"}, "action": {"draft"}, "gorilla.csrf.Token": {newToken}})
+	if third.Code != http.StatusSeeOther || third.Header().Get("Location") != "/databases/1/migrations/3" {
+		t.Fatalf("later draft status=%d", third.Code)
+	}
+	thirdDetail := editorClient.get("/databases/1/migrations/3")
+	_, thirdToken := extractCSRF(t, thirdDetail)
+	thirdStart := strings.Index(thirdDetail.Body.String(), reviewField)
+	if thirdStart < 0 {
+		t.Fatal("later draft review field missing")
+	}
+	thirdReview := strings.SplitN(thirdDetail.Body.String()[thirdStart+len(reviewField):], `"`, 2)[0]
+	if resp := editorClient.post("/databases/1/migrations/3/execute", url.Values{"confirm_execute": {"true"}, "reviewed_draft": {thirdReview}, "gorilla.csrf.Token": {thirdToken}}); resp.Code != http.StatusConflict {
+		t.Fatalf("out-of-order execution status=%d", resp.Code)
+	}
+	// Editing after review makes the original hash stale, even if SQL is otherwise executable.
+	update := editorClient.post(generatedPath+"/edit", url.Values{"title": {"reviewed schema diff"}, "sql_text": {"ALTER TABLE " + dstTable + " ADD COLUMN label text;"}, "gorilla.csrf.Token": {reviewToken}})
+	if update.Code != http.StatusSeeOther {
+		t.Fatalf("generated draft edit status=%d", update.Code)
+	}
+	if resp := editorClient.post(generatedPath+"/execute", url.Values{"confirm_execute": {"true"}, "reviewed_draft": {oldReview}, "gorilla.csrf.Token": {reviewToken}}); resp.Code != http.StatusConflict {
+		t.Fatalf("stale review status=%d", resp.Code)
+	}
+	if countColumns() != 0 {
+		t.Fatal("stale review changed destination table")
+	}
+	detail = editorClient.get(generatedPath)
+	_, reviewToken = extractCSRF(t, detail)
+	reviewStart = strings.Index(detail.Body.String(), reviewField)
+	if reviewStart < 0 {
+		t.Fatal("edited draft review field missing")
+	}
+	newReview := strings.SplitN(detail.Body.String()[reviewStart+len(reviewField):], `"`, 2)[0]
+	if resp := editorClient.post(generatedPath+"/execute", url.Values{"confirm_execute": {"true"}, "reviewed_draft": {newReview}, "gorilla.csrf.Token": {reviewToken}}); resp.Code != http.StatusSeeOther {
+		t.Fatalf("generated migration execution status=%d", resp.Code)
+	}
+	if countColumns() != 1 {
+		t.Fatal("generated migration did not change destination table")
+	}
+	if detail = editorClient.get(generatedPath); detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "APPLIED") || !strings.Contains(detail.Body.String(), "Dieksekusi oleh:") || !strings.Contains(detail.Body.String(), "Waktu eksekusi:") {
+		t.Fatalf("generated migration history status=%d", detail.Code)
+	}
+	if resp := editorClient.post("/databases/1/migrations/3/execute", url.Values{"confirm_execute": {"true"}, "reviewed_draft": {thirdReview}, "gorilla.csrf.Token": {thirdToken}}); resp.Code != http.StatusSeeOther {
+		t.Fatalf("later migration execution status=%d", resp.Code)
+	}
+
+	// A generated draft edited to fail must roll back both DDL and earlier DML.
+	if _, err := targetDB.ExecContext(ctx, `ALTER TABLE `+refTable+` ADD COLUMN note text`); err != nil {
+		t.Fatal("could not extend disposable reference table")
+	}
+	failDiff := editorClient.get(diffPath)
+	_, failToken := extractCSRF(t, failDiff)
+	failDraft := editorClient.post("/databases/1/schemas/diff", url.Values{
+		"reference": {referenceSchema}, "target": {destinationSchema}, "gorilla.csrf.Token": {failToken},
+	})
+	if failDraft.Code != http.StatusSeeOther || failDraft.Header().Get("Location") != "/databases/1/migrations/4" {
+		t.Fatalf("failing generated draft status=%d location=%q", failDraft.Code, failDraft.Header().Get("Location"))
+	}
+	failPath := failDraft.Header().Get("Location")
+	failToken = editorClient.csrfFrom(failPath)
+	if resp := editorClient.post(failPath+"/edit", url.Values{
+		"title":              {"broken generated migration"},
+		"sql_text":           {"ALTER TABLE " + dstTable + " ADD COLUMN note text; INSERT INTO " + qualifiedTable + " VALUES (2, 'ShouldRollback'); SELECT * FROM non_existent_table_xyz;"},
 		"gorilla.csrf.Token": {failToken},
+	}); resp.Code != http.StatusSeeOther {
+		t.Fatalf("edit failing generated draft status=%d", resp.Code)
+	}
+	failDetail := editorClient.get(failPath)
+	_, failToken = extractCSRF(t, failDetail)
+	failStart := strings.Index(failDetail.Body.String(), reviewField)
+	if failStart < 0 {
+		t.Fatal("failing draft review field missing")
+	}
+	failReview := strings.SplitN(failDetail.Body.String()[failStart+len(reviewField):], `"`, 2)[0]
+	failResp := editorClient.post(failPath+"/execute", url.Values{
+		"confirm_execute": {"true"}, "reviewed_draft": {failReview}, "gorilla.csrf.Token": {failToken},
 	})
 	if failResp.Code != http.StatusUnprocessableEntity || !strings.Contains(failResp.Body.String(), "FAILED") {
-		t.Fatalf("failing migration status=%d body=%s", failResp.Code, failResp.Body.String())
+		t.Fatalf("failing migration status=%d", failResp.Code)
+	}
+	if err := targetDB.QueryRowContext(ctx, `SELECT count(*) FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname='items' AND a.attname='note' AND a.attnum>0 AND NOT a.attisdropped`, destinationSchema).Scan(&columnCount); err != nil || columnCount != 0 {
+		t.Fatalf("failed generated SQL did not roll back DDL: count=%d err=%v", columnCount, err)
 	}
 
 	// 4. Viewer logs in, browses schema/tables/structure/data and migration history, but cannot create or run migrations.
@@ -370,11 +495,21 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 		t.Fatalf("viewer data page status=%d body=%s", dataResp.Code, dataResp.Body.String())
 	}
 	historyResp := viewerClient.get("/databases/1/migrations")
-	if historyResp.Code != http.StatusOK || !strings.Contains(historyResp.Body.String(), "create products table") || !strings.Contains(historyResp.Body.String(), "broken migration") {
+	if historyResp.Code != http.StatusOK || !strings.Contains(historyResp.Body.String(), "create products table") || !strings.Contains(historyResp.Body.String(), "broken generated migration") {
 		t.Fatalf("viewer migration history status=%d body=%s", historyResp.Code, historyResp.Body.String())
 	}
 	if resp := viewerClient.get("/databases/1/migrations/new"); resp.Code != http.StatusForbidden {
 		t.Fatalf("view-only GET /databases/1/migrations/new = %d, want 403", resp.Code)
+	}
+	viewerDiff := viewerClient.get(diffPath)
+	if viewerDiff.Code != http.StatusOK || strings.Contains(viewerDiff.Body.String(), "Buat draft migration") {
+		t.Fatalf("view-only diff status=%d or exposes draft action", viewerDiff.Code)
+	}
+	_, viewerDiffToken := extractCSRF(t, viewerDiff)
+	if resp := viewerClient.post("/databases/1/schemas/diff", url.Values{
+		"reference": {referenceSchema}, "target": {destinationSchema}, "gorilla.csrf.Token": {viewerDiffToken},
+	}); resp.Code != http.StatusForbidden {
+		t.Fatalf("view-only diff draft status=%d", resp.Code)
 	}
 	viewerCSRF := viewerClient.csrfFrom("/")
 	if resp := viewerClient.post("/databases/1/migrations", url.Values{
@@ -408,6 +543,30 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 	}
 	if resp := editorClient.get("/"); resp.Code != http.StatusSeeOther || resp.Header().Get("Location") != "/login" {
 		t.Fatalf("logged-out GET / = %d location %q, want 303 to /login", resp.Code, resp.Header().Get("Location"))
+	}
+	// A grant revoked after review invalidates the editor session before execution.
+	editorLoginToken = editorClient.csrfFrom("/login")
+	if resp := editorClient.post("/login", url.Values{"username": {"editor_user"}, "password": {"editor-secret-pass"}, "gorilla.csrf.Token": {editorLoginToken}}); resp.Code != http.StatusSeeOther {
+		t.Fatalf("editor re-login status=%d", resp.Code)
+	}
+	newToken = editorClient.csrfFrom("/databases/1/migrations/new")
+	pending := editorClient.post("/databases/1/migrations", url.Values{"title": {"pending review"}, "sql_text": {"SELECT 1;"}, "action": {"draft"}, "gorilla.csrf.Token": {newToken}})
+	if pending.Code != http.StatusSeeOther || pending.Header().Get("Location") != "/databases/1/migrations/5" {
+		t.Fatalf("pending draft status=%d", pending.Code)
+	}
+	pendingDetail := editorClient.get(pending.Header().Get("Location"))
+	_, pendingToken := extractCSRF(t, pendingDetail)
+	pendingStart := strings.Index(pendingDetail.Body.String(), reviewField)
+	if pendingStart < 0 {
+		t.Fatal("pending draft review field missing")
+	}
+	pendingReview := strings.SplitN(pendingDetail.Body.String()[pendingStart+len(reviewField):], `"`, 2)[0]
+	revokeToken = adminClient.csrfFrom("/platform/groups/2")
+	if resp := adminClient.post("/platform/groups/2/grants", url.Values{"database_id": {"1"}, "level": {"0"}, "confirm": {"true"}, "gorilla.csrf.Token": {revokeToken}}); resp.Code != http.StatusSeeOther {
+		t.Fatalf("revoke editor grant status=%d", resp.Code)
+	}
+	if resp := editorClient.post("/databases/1/migrations/5/execute", url.Values{"confirm_execute": {"true"}, "reviewed_draft": {pendingReview}, "gorilla.csrf.Token": {pendingToken}}); resp.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked editor execution status=%d", resp.Code)
 	}
 }
 

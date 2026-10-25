@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"if3110.local/db-platform/internal/migration"
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -16,12 +18,18 @@ import (
 
 type viewerReader interface {
 	Schemas(context.Context, contracts.UserID, contracts.DatabaseID) ([]string, error)
+	Diff(context.Context, contracts.UserID, contracts.DatabaseID, string, string) (SchemaDiff, error)
 	Tables(context.Context, contracts.UserID, contracts.DatabaseID, string) ([]Table, error)
 	Details(context.Context, contracts.UserID, contracts.DatabaseID, string, string) (TableDetails, error)
 	Data(context.Context, contracts.UserID, contracts.DatabaseID, string, string, int) (DataPage, error)
 }
 
+type draftCreator interface {
+	CreateDraft(context.Context, contracts.UserID, contracts.DatabaseID, string, string) (migration.MigrationRecord, error)
+}
+
 type handlers struct {
+	drafts      draftCreator
 	manager     *Manager
 	viewer      viewerReader
 	layout      func(string, templ.Component) templ.Component
@@ -61,7 +69,7 @@ func (h *handlers) navigation(r *http.Request, actor contracts.UserID, action co
 // NewHandler returns routes under /databases/. Mount without StripPrefix, inside
 // the central session and CSRF middleware. layout is supplied by internal/ui's
 // owner; this module only renders page content and never imports internal/web.
-func NewHandler(manager *Manager, layout func(string, templ.Component) templ.Component) (http.Handler, error) {
+func NewHandler(manager *Manager, layout func(string, templ.Component) templ.Component, drafts ...draftCreator) (http.Handler, error) {
 	if manager == nil || layout == nil {
 		return nil, ErrInvalidConfig
 	}
@@ -70,6 +78,9 @@ func NewHandler(manager *Manager, layout func(string, templ.Component) templ.Com
 		return nil, err
 	}
 	h := &handlers{manager: manager, viewer: viewer, layout: layout, currentUser: auth.CurrentUser}
+	if len(drafts) > 0 {
+		h.drafts = drafts[0]
+	}
 	return h.routes(), nil
 }
 
@@ -84,6 +95,8 @@ func (h *handlers) routes() http.Handler {
 	mux.HandleFunc("GET /databases/connections/{id}/delete", h.withUser(h.deletePage))
 	mux.HandleFunc("POST /databases/connections/{id}/delete", h.withUser(h.deleteConnection))
 	mux.HandleFunc("GET /databases/{id}/schemas", h.withUser(h.schemas))
+	mux.HandleFunc("GET /databases/{id}/schemas/diff", h.withUser(h.schemaDiff))
+	mux.HandleFunc("POST /databases/{id}/schemas/diff", h.withUser(h.createDiffDraft))
 	mux.HandleFunc("GET /databases/{id}/tables", h.withUser(h.tables))
 	mux.HandleFunc("GET /databases/{id}/table", h.withUser(h.details))
 	mux.HandleFunc("GET /databases/{id}/data", h.withUser(h.data))
@@ -290,6 +303,96 @@ func (h *handlers) schemas(w http.ResponseWriter, r *http.Request, actor contrac
 		return
 	}
 	h.render(w, r, 200, "Schema · "+nav.Database.Name, schemasPage(nav, items))
+}
+
+func (h *handlers) schemaDiff(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	q := r.URL.Query()
+	reference, target := q.Get("reference"), q.Get("target")
+	if reference != "" || target != "" {
+		if !visibleSchema(reference) || !visibleSchema(target) || reference == target {
+			h.fail(w, r, ErrInvalidInput)
+			return
+		}
+	}
+	nav, err := h.navigation(r, actor, contracts.ActionViewSchema, "diff")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	id := nav.Database.ID
+	schemas, err := h.viewer.Schemas(r.Context(), actor, id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var diff SchemaDiff
+	if reference != "" {
+		if !slices.Contains(schemas, reference) || !slices.Contains(schemas, target) {
+			h.fail(w, r, ErrNotFound)
+			return
+		}
+		diff, err = h.viewer.Diff(r.Context(), actor, id, reference, target)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	h.render(w, r, 200, "Bandingkan schema · "+nav.Database.Name, schemaDiffPage(nav, schemas, reference, target, diff, auth.CSRFToken(r), h.drafts != nil))
+}
+
+func (h *handlers) createDiffDraft(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
+	if h.drafts == nil {
+		h.fail(w, r, ErrUnavailable)
+		return
+	}
+	id := contracts.DatabaseID(r.PathValue("id"))
+	if !validID(id) {
+		h.fail(w, r, ErrInvalidInput)
+		return
+	}
+	if err := h.manager.authorizer.RequireDatabaseAccess(r.Context(), actor, id, contracts.ActionCreateMigration); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" || r.URL.RawQuery != "" || r.ContentLength > 16384 {
+		h.fail(w, r, ErrInvalidInput)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16384)
+	if err := r.ParseForm(); err != nil || len(r.PostForm.Encode()) > 16384 {
+		h.fail(w, r, ErrInvalidInput)
+		return
+	}
+	reference, target := r.PostForm.Get("reference"), r.PostForm.Get("target")
+	if !visibleSchema(reference) || !visibleSchema(target) || reference == target {
+		h.fail(w, r, ErrInvalidInput)
+		return
+	}
+	schemas, err := h.viewer.Schemas(r.Context(), actor, id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if !slices.Contains(schemas, reference) || !slices.Contains(schemas, target) {
+		h.fail(w, r, ErrNotFound)
+		return
+	}
+	diff, err := h.viewer.Diff(r.Context(), actor, id, reference, target)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if len(diff.Changes) == 0 || diff.SQL == "" {
+		h.fail(w, r, ErrInvalidInput)
+		return
+	}
+	record, err := h.drafts.CreateDraft(r.Context(), actor, id, "Schema "+reference+" → "+target, diff.SQL)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, viewerURL(id, "migrations/"+strconv.FormatInt(record.Version, 10), "", "", 0), http.StatusSeeOther)
 }
 func (h *handlers) tables(w http.ResponseWriter, r *http.Request, actor contracts.UserID) {
 	nav, err := h.navigation(r, actor, contracts.ActionViewSchema, "tables")

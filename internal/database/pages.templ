@@ -151,12 +151,78 @@ templ databasesPage(items []DatabaseChoice, admin bool) {
 	}
 }
 
+templ schemaDiffPage(nav pageNavigation, schemas []string, reference, target string, diff SchemaDiff, token string, canDraft bool) {
+	@modulePage("Bandingkan schema", nav) {
+		<p>Pilih schema acuan (struktur yang diinginkan) dan schema tujuan (yang akan diubah) di database ini.</p>
+		<form class="db-form" method="get" action={ templ.URL(viewerURL(nav.Database.ID, "schemas/diff", "", "", 0)) }>
+			<label for="diff-reference">Schema acuan</label>
+			<select id="diff-reference" name="reference" required>
+				<option value="">Pilih schema</option>
+				for _, schema := range schemas {
+					<option value={ schema } selected?={ schema == reference }>{ schema }</option>
+				}
+			</select>
+			<label for="diff-target">Schema tujuan</label>
+			<select id="diff-target" name="target" required>
+				<option value="">Pilih schema</option>
+				for _, schema := range schemas {
+					<option value={ schema } selected?={ schema == target }>{ schema }</option>
+				}
+			</select>
+			<div class="db-actions"><button type="submit">Bandingkan schema</button><a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>Kembali ke schema</a></div>
+		</form>
+		if reference != "" && target != "" {
+			<h2>Perubahan: { reference } → { target }</h2>
+			if len(diff.Changes) == 0 {
+				<p class="db-empty">Tidak ada perubahan yang dapat dibuatkan SQL migration.</p>
+			} else {
+				<div class="db-scroll" tabindex="0" role="region" aria-label="Hasil perbandingan schema">
+					<table><caption>Perubahan schema</caption><thead><tr><th scope="col">Objek</th><th scope="col">Tindakan</th><th scope="col">Sebelum</th><th scope="col">Sesudah</th><th scope="col">Risiko</th></tr></thead><tbody>
+						for _, change := range diff.Changes {
+							<tr><th scope="row">{ change.Kind } · { change.Table } { change.Name }</th><td>{ change.Action }</td><td>{ change.Before }</td><td>{ change.After }</td><td>
+								if change.Risk == RiskDestructive {
+									<strong class="db-alert" role="alert">Perubahan destruktif: { change.Table } { change.Name }</strong>
+								} else {
+									{ string(change.Risk) }
+								}
+							</td></tr>
+						}
+					</tbody></table>
+				</div>
+			}
+			if len(diff.Unsupported) > 0 {
+				<h2>Tidak didukung</h2>
+				<p class="db-alert" role="alert">Objek berikut tidak termasuk SQL otomatis; hasil belum tentu menyamakan seluruh schema.</p>
+				<ul class="db-list">
+					for _, object := range diff.Unsupported {
+						<li>{ object.Kind } · { object.Table } { object.Name }</li>
+					}
+				</ul>
+			}
+			if diff.SQL != "" {
+				<h2>Kandidat SQL</h2><p>Periksa setiap pernyataan, terutama perubahan destruktif. SQL tidak dijalankan pada halaman ini.</p>
+				<pre class="db-scroll"><code>{ diff.SQL }</code></pre>
+				if canDraft && nav.Database.Level == contracts.AccessViewEdit {
+					<form method="post" action={ templ.URL(viewerURL(nav.Database.ID, "schemas/diff", "", "", 0)) }>
+						<input type="hidden" name="gorilla.csrf.Token" value={ token }/>
+						<input type="hidden" name="reference" value={ reference }/><input type="hidden" name="target" value={ target }/>
+						<button type="submit">Buat draft migration</button>
+					</form>
+				}
+			}
+		}
+	}
+}
+
 templ schemasPage(nav pageNavigation, schemas []string) {
 	@modulePage("Schema", nav) {
 		<p>Schema mengelompokkan tabel dan view di dalam database. Pilih schema untuk melihat isinya.</p>
 		if len(schemas) == 0 {
 			<p class="db-empty">Tidak ada schema yang dapat ditampilkan. Hubungi admin untuk memeriksa struktur dan izin koneksi PostgreSQL.</p>
 		} else {
+			if len(schemas) > 1 {
+				<a class="db-button" href={ templ.URL(viewerURL(nav.Database.ID, "schemas/diff", "", "", 0)) }>Bandingkan schema</a>
+			}
 			<ul class="db-list">
 				for _, schema := range schemas {
 					<li><a href={ templ.URL(viewerURL(nav.Database.ID, "tables", schema, "", 0)) }>{ schema }</a></li>
