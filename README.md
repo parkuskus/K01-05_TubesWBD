@@ -2,7 +2,7 @@
 
 Fondasi aplikasi web pengelolaan database untuk Tugas Besar IF3110. Backend menggunakan Go, sedangkan halaman dirender di server. **Aplikasi ini tidak menggunakan SPA.**
 
-> Status saat ini: login/logout, bootstrap admin pertama, session PostgreSQL, dan CSRF sudah terhubung ke server. Authorization group, database viewer, koneksi database target, dan fitur migration belum diimplementasikan.
+> Status saat ini: login/logout, administrasi pengguna dan grup, grant, koneksi target, viewer, serta migration telah terpasang pada server. Tes integrasi PostgreSQL membutuhkan tiga database khusus uji; tes yang `SKIP` tidak membuktikan fitur tersebut.
 
 ## Tech stack
 
@@ -22,15 +22,16 @@ internal/web/        Router, handler login/logout, dan halaman Templ
 internal/contracts/  Tipe dan interface lintas modul
 internal/auth/       Bootstrap admin, autentikasi, session PostgreSQL, dan CSRF
 internal/config/     Pembacaan `.env` dan validasi konfigurasi
-internal/database/   Koneksi PostgreSQL dan database viewer (placeholder)
-internal/migration/  Editor, eksekusi, dan riwayat migration (placeholder)
+internal/database/   Koneksi PostgreSQL dan database viewer
+internal/migration/  Editor, eksekusi, dan riwayat migration target
+internal/platformui/ UI administrasi pengguna, grup, dan grant
 internal/platform/   Backend administrasi user, group, dan keanggotaan
 db/migrations/       Schema user, session, group, dan keanggotaan database platform
 web/static/          CSS dan aset statis
 extra/               Dokumen pendukung lokal; seluruh folder diabaikan Git
 ```
 
-Folder `internal/database` dan `internal/migration` masih placeholder. Pembagian tanggung jawab yang diusulkan untuk Aufar, Emil, dan Kevin ada di `extra/Pembagian-Kerja-Milestone-1.md` pada komputer lokal.
+Folder `extra/` berisi dokumen pendukung lokal dan diabaikan Git.
 
 ## Prasyarat
 
@@ -48,9 +49,9 @@ Unduh dependency yang tercatat di `go.mod`:
 go mod download
 ```
 
-Salin `.env.example` menjadi `.env`, lalu atur `PLATFORM_DATABASE_URL`, `CSRF_AUTH_KEY`, `INITIAL_ADMIN_USERNAME`, dan `INITIAL_ADMIN_PASSWORD`. File `.env` dibaca saat startup jika tersedia; variabel environment proses tetap memiliki prioritas. Password admin awal hanya dibutuhkan ketika tabel `users` masih kosong.
+Salin `.env.example` menjadi `.env`, lalu atur `PLATFORM_DATABASE_URL`, `CSRF_AUTH_KEY`, dan `DATABASE_CREDENTIAL_KEY`. Kedua kunci harus masing-masing 64 karakter hex (32 byte) dan **berbeda**. `INITIAL_ADMIN_USERNAME` dan `INITIAL_ADMIN_PASSWORD` hanya dibutuhkan ketika tabel `users` masih kosong. File `.env` dibaca saat startup jika tersedia; variabel environment proses tetap memiliki prioritas.
 
-`CSRF_AUTH_KEY` harus berisi 64 karakter hex yang mewakili 32 byte acak. Buat lokal di PowerShell (jangan kirim atau commit hasilnya):
+Untuk setiap kunci, buat nilai acak tersendiri di PowerShell (jangan kirim atau commit hasilnya):
 
 ```powershell
 $bytes = New-Object byte[] 32
@@ -113,45 +114,21 @@ make run       # Generate lalu jalankan server
 make test      # Generate lalu jalankan seluruh test
 ```
 
-## Alur program saat ini
+## Alur aplikasi dan route aktif
 
-Diagram ini menunjukkan implementasi yang benar-benar tersedia sekarang:
+Saat startup, `cmd/web` memuat konfigurasi, menghubungi `PLATFORM_DATABASE_URL`, menerapkan migration platform, dan membuat admin pertama bila tabel pengguna masih kosong. Semua halaman kerja memakai sesi; POST memakai CSRF. Route utama:
 
-```text
-Browser
-  │ GET /login
-  ▼
-cmd/web/main.go
-  │ Membaca .env/environment, connect ke PLATFORM_DATABASE_URL,
-  │ menerapkan migration platform, bootstrap admin jika belum ada
-  ▼
-internal/web.New() → CSRF middleware → ServeMux
-  ├─ GET /login    → form username/password + CSRF token
-  ├─ POST /login   → autentikasi, buat cookie session, redirect /
-  ├─ GET /         → wajib punya session
-  ├─ POST /logout  → wajib punya session + CSRF, cabut session
-  └─ GET /static/* → aset dari web/static/
-```
+| Route | Fungsi |
+|---|---|
+| `GET/POST /login`, `POST /logout`, `GET /` | Masuk, keluar, beranda. |
+| `/platform/users`, `/platform/groups`, `/platform/groups/{id}` | Kelola pengguna, grup, anggota, dan grant (Platform Admin). |
+| `/databases/connections/`, `/new`, `/{id}/edit`, `/{id}/delete` | Kelola koneksi target (Platform Admin); penghapusan memakai halaman konfirmasi. |
+| `/databases/`, `/{id}/schemas`, `/{id}/tables`, `/{id}/table`, `/{id}/data` | Pilih database sesuai grant, lihat struktur dan data; `table`/`data` memakai parameter `schema` dan `table`, `data` memakai `page`. |
+| `/databases/{databaseID}/migrations`, `/new`, `/{version}` | Riwayat, editor, dan detail migration; POST membuat draft, mengubah draft, atau mengeksekusi setelah konfirmasi. |
 
-Untuk halaman baru, buat file `.templ` pada paket yang sesuai, jalankan generator Templ, lalu daftarkan handler melalui router. Perubahan file CSS atau aset statis disimpan di `web/static/`. Hindari SPA dan client-side router; navigasi dan pengiriman form dilakukan melalui request HTTP ke server.
+`View Only` boleh membaca schema, data, dan riwayat; `View + Edit` juga boleh mengelola migration. Eksekusi SQL berhasil dicatat sebagai `APPLIED`; kegagalan melakukan rollback perubahan dalam transaksi dan mencatat `FAILED`. Pemeriksaan izin selalu dilakukan di backend; menyembunyikan tombol saja bukan kontrol akses. Tidak ada editor data baris per baris atau dukungan DBMS selain PostgreSQL.
 
-## Alur aplikasi yang dituju
-
-Alur berikut adalah target berdasarkan spesifikasi Milestone 1, **bukan fitur yang sudah aktif**:
-
-```text
-Browser
-  → Login dan session
-  → Authorization backend
-  → Pilih database PostgreSQL
-  → Lihat schema/data atau riwayat migration
-  → (View + Edit) Susun dan tinjau SQL migration
-  → Jalankan dalam transaction
-      ├─ berhasil → COMMIT dan catat riwayat
-      └─ gagal    → ROLLBACK dan catat status
-```
-
-Setiap request yang dilindungi harus diperiksa di backend. Menyembunyikan tombol di UI saja bukan kontrol akses.
+Migration hanya dapat dijalankan bila **semua versi sebelumnya `APPLIED`**. Versi yang masih `DRAFT` atau berstatus `FAILED` menghalangi eksekusi berikutnya; saat ini belum ada alur untuk mengulang atau memperbaiki versi `FAILED`, sehingga jangan menjalankan migration gagal pada database yang perlu terus dimigrasikan tanpa rencana pemulihan.
 
 ## Model akses dan kontrak antarmodul
 
@@ -163,23 +140,19 @@ Package `internal/contracts/` menyediakan tipe `UserID`, `GroupID`, `DatabaseID`
 - Grant atau aksi yang nilainya tidak dikenal ditolak (*fail closed*).
 - Status Platform Admin terpisah dari akses database; admin tetap memerlukan grant group untuk melihat atau mengubah database target.
 
-`platform.Service` mengimplementasikan `contracts.Authorizer`: hak admin platform dibaca dari user terkini, sedangkan izin database dihitung dari grant seluruh group pengguna setiap kali diperiksa. Query izin database belum dapat dijalankan sebelum migration grant `0005` tersedia. Modul pemakai meminta pool target melalui `DatabaseProvider.Pool(ctx, databaseID)`. Provider bertanggung jawab mencari metadata koneksi berdasarkan ID dan mengelola pool; DSN serta password tidak dikembalikan kepada modul pemakai. Metadata koneksi dikelola di storage platform. Provider koneksi belum tersedia.
+`platform.Service` mengimplementasikan `contracts.Authorizer`: hak admin dan grant dibaca ulang pada pemeriksaan berikutnya. Grant disimpan di database platform dengan FK ke koneksi target (`db/migrations/0005_*`). Modul viewer/migration meminta pool target berdasarkan ID melalui `DatabaseProvider.Pool`; password koneksi disimpan terenkripsi di platform dan tidak dikirim ke halaman.
 
 Riwayat migration disimpan **di setiap database target**, bukan di database platform, dalam schema khusus `if3110_platform` dengan tabel `migration_history` (`if3110_platform.migration_history`). Schema tersebut dicadangkan untuk metadata aplikasi; implementasi dan tabel dimiliki modul migration.
 
-**Kontrak UI/route yang diusulkan:** setiap modul memiliki handler dan template Templ sendiri; `ui.Layout(title string, body templ.Component)` di `internal/ui` menyediakan kerangka HTML bersama (judul dokumen dan isi dalam `<main>`). Layout tidak membuat navigasi atau pemeriksaan izin: handler tetap wajib memanggil `contracts.Authorizer` di backend. `internal/web` menjadi satu-satunya pemilik komposisi middleware dan router untuk memasang handler modul pada `/platform/`, `/databases/`, dan `/migrations/`. Modul tidak mengimpor `internal/web`; satu integrator mengubah `internal/web/server.go` agar tidak terjadi konflik. Route/UI modul belum tersedia dan halaman login/home yang sudah ada belum dipindahkan ke layout baru.
+`ui.Layout` menyediakan kerangka HTML bersama; `internal/web` memasang route dan middleware. Handler modul mempertahankan pemeriksaan izin sendiri. Keputusan **grant tertinggi menang** sudah diterapkan, tetapi masih perlu persetujuan akhir tim sebelum disebut kebijakan final. Kebijakan sesi: idle 30 menit, umur maksimal 12 jam, rotasi 15 menit, grace period 30 detik.
 
-**Status keputusan:** pemisahan hak Platform Admin dari akses database telah ditetapkan dalam spesifikasi. Kebijakan grant tertinggi yang dipakai kode, batas provider koneksi, lokasi riwayat migration, serta kontrak UI/route masih perlu dikonfirmasi bersama Emil dan Kevin. Layout `internal/ui` sudah tersedia; provider koneksi dan UI modul belum diimplementasikan. Kebijakan session yang digunakan adalah idle 30 menit, absolute 12 jam, rotasi 15 menit, dan grace period 30 detik.
-
-**Handoff Kevin/Emil:** gunakan `platform.NewService(db)` untuk `ListUsers/CreateUser/UpdateUsername/SetPassword/SetPlatformAdmin/DeleteUser`, `ListGroups/CreateGroup/RenameGroup/DeleteGroup/ListMembers/SetMembership`, serta `ListGrants/SetGrant`. Untuk pemeriksaan per request gunakan `contracts.Authorizer.RequirePlatformAdmin(ctx, userID)` dan `RequireDatabaseAccess(ctx, userID, databaseID, action)` (`platform.Service` mengimplementasikannya). Render halaman modul melalui `ui.Layout(title, body)`. Kontrak pool target untuk Emil tetap `contracts.DatabaseProvider.Pool(ctx, databaseID) (*sql.DB, error)`; kredensial/DSN tidak diteruskan ke modul pemakai. Grant dan pemeriksaan izin database belum dapat dipakai di PostgreSQL hingga migration `0004`/`0005` tersedia.
-
-**Usulan handoff administrasi platform (perlu tinjauan Kevin/Emil):** `internal/platform` menyediakan model `User` (ID, username, status admin), `Group` (ID, nama), dan `Grant` (ID group, ID database, level); tidak ada hash password atau kredensial koneksi di model publik. `platform.NewService(db)` menyediakan operasi daftar/buat/ubah/hapus user dan group, `ListMembers`, serta `SetMembership` untuk menambah atau menghapus keanggotaan secara idempoten. `ListGrants(ctx, actorID, groupID)` dan `SetGrant(ctx, actorID, groupID, databaseID, level)` sudah memiliki validasi dan tes unit; `AccessNone` menghapus grant. `RequirePlatformAdmin` dan `RequireDatabaseAccess` tersedia pada service; yang pertama telah diuji dengan PostgreSQL, yang kedua baru dengan fake. **Operasi grant dan izin database PostgreSQL belum siap digunakan:** tabel `group_database_access` dan FK-nya menunggu migration koneksi `0004` Emil, kemudian migration `0005` dan tes PostgreSQL harus dibuat sebelum digunakan. Tiap metode administrasi menerima `ctx` dan ID aktor terautentikasi; repository memeriksa status Platform Admin di backend. Error domain: `ErrInvalidInput`, `ErrNotFound`, `ErrConflict`, dan `contracts.ErrForbidden`. ID database pada grant nantinya merujuk ID koneksi terdaftar milik Emil. Schema platform diurutkan: `0003_create_groups.sql` (Aufar), migration koneksi (Emil), lalu migration grant (Aufar). Login memeriksa ulang hash password dan status admin melalui `LoginProof` sambil mengunci user dalam transaksi pembuatan session; bukti lama ditolak tanpa menerbitkan cookie. Tes PostgreSQL memerlukan `PLATFORM_TEST_DATABASE_URL` dalam environment proses agar tidak dilewati.
+Perubahan keanggotaan/grant yang benar-benar mengubah akses dan penghapusan grup mencabut sesi anggota terdampak pada transaksi yang sama. Pengguna tersebut perlu login kembali; perubahan idempoten tidak mencabut sesi.
 
 ## Test dan pemeriksaan
 
 ### Menyiapkan PostgreSQL khusus test
 
-Test integrasi **membuat dan menghapus schema sementara**. Jangan arahkan `PLATFORM_TEST_DATABASE_URL` ke database development, production, atau database target pengguna. Gunakan database tersendiri bernama `platform_test`; test platform menolak nama database selain itu. Jika ada beberapa instalasi PostgreSQL (misalnya Windows dan Docker), pilih host dan port instalasi yang sama untuk pembuatan database dan URL test.
+Tes integrasi **membuat dan menghapus schema sementara**, termasuk `if3110_platform` pada target. Siapkan tiga database **disposable** terpisah: `platform_test`, `target_test`, dan `migration_readonly_test`. Jangan arahkan URL tes ke database pengembangan, produksi, atau database target pengguna; kedua database target tes migration harus belum memiliki schema `if3110_platform`. Jika ada beberapa instalasi PostgreSQL (misalnya Windows dan Docker), pilih host dan port yang sama saat membuat database dan menyusun URL.
 
 1. Masuk ke PostgreSQL lokal dengan akun administrator (contoh Windows dengan `psql` di `PATH`):
 
@@ -210,29 +183,33 @@ Test integrasi **membuat dan menghapus schema sementara**. Jangan arahkan `PLATF
    psql -h localhost -p 5432 -U platform_test_user -d platform_test -W
    ```
 
-   Setelah berhasil masuk, keluar dengan `\q`. Isi `PLATFORM_TEST_DATABASE_URL` dalam `.env` **lokal** dengan bentuk `postgres://platform_test_user:<PASSWORD>@localhost:5432/platform_test?sslmode=disable`. Ganti `<PASSWORD>` dengan password role test; karakter khusus di password harus di-*URL-encode*. Jangan commit `.env`, menyalin URL ke laporan bug, atau memakai kredensial admin PostgreSQL untuk test.
+   Setelah berhasil masuk, keluar dengan `\q`. Buat juga `target_test` dan `migration_readonly_test` sebagai database khusus uji dengan role yang memiliki izin `CONNECT` dan `CREATE`. Jangan memakai kredensial admin PostgreSQL untuk tes.
 
-3. Test platform membaca URL **hanya dari environment proses**, bukan dari `.env`. Di PowerShell, muat nilainya tanpa mencetak URL (jalankan ulang setelah mengubah `.env`, karena environment proses yang lama tidak berubah otomatis):
-
-   ```powershell
-   $line = Get-Content .env | Where-Object { $_ -match '^\s*(?:export\s+)?PLATFORM_TEST_DATABASE_URL\s*=' } | Select-Object -Last 1
-   if (-not $line) { throw 'PLATFORM_TEST_DATABASE_URL tidak ditemukan di .env' }
-   $env:PLATFORM_TEST_DATABASE_URL = ($line -replace '^\s*(?:export\s+)?PLATFORM_TEST_DATABASE_URL\s*=\s*', '').Trim().Trim('"', "'")
-   $uri = [uri]$env:PLATFORM_TEST_DATABASE_URL
-   if ($uri.Scheme -notin @('postgres', 'postgresql') -or $uri.AbsolutePath -ne '/platform_test') { throw 'URL test harus menunjuk ke platform_test' }
-   ```
-
-4. Dari root proyek, jalankan test PostgreSQL khusus race login, kemudian seluruh suite dan pemeriksaan Go:
+3. Atur ketiga URL **di environment proses** sebelum menjalankan tes. Sebagian tes mengabaikan `.env`, sedangkan tes sesi lama memakai `.env` sebagai fallback; nilai proses mencegah ketidakkonsistenan. Contoh PowerShell ini tidak mencetak kata sandi maupun URL:
 
    ```powershell
-   go test ./internal/platform -run '^TestLoginProofRejectsSessionAfterPasswordOrRoleChange$' -count=1 -v
-   go test ./... -count=1
-   go vet ./...
-   go build ./...
-   Remove-Item Env:PLATFORM_TEST_DATABASE_URL
+   $secret = Read-Host 'Password role PostgreSQL untuk tes' -AsSecureString
+   $cred = [pscredential]::new('platform_test_user', $secret)
+   $pw = [uri]::EscapeDataString($cred.GetNetworkCredential().Password)
+
+   try {
+       $env:PLATFORM_TEST_DATABASE_URL = "postgres://platform_test_user:${pw}@localhost:5432/platform_test?sslmode=disable"
+       $env:TARGET_TEST_DATABASE_URL = "postgres://platform_test_user:${pw}@localhost:5432/target_test?sslmode=disable"
+       $env:MIGRATION_READONLY_TEST_DATABASE_URL = "postgres://platform_test_user:${pw}@localhost:5432/migration_readonly_test?sslmode=disable"
+
+       go test ./... -count=1 -v
+       if ($LASTEXITCODE -ne 0) { throw 'Tes gagal; periksa FAIL dan SKIP tanpa membagikan URL.' }
+       go vet ./...
+       if ($LASTEXITCODE -ne 0) { throw 'go vet gagal.' }
+       go build ./...
+       if ($LASTEXITCODE -ne 0) { throw 'go build gagal.' }
+   } finally {
+       Remove-Item Env:PLATFORM_TEST_DATABASE_URL, Env:TARGET_TEST_DATABASE_URL, Env:MIGRATION_READONLY_TEST_DATABASE_URL -ErrorAction SilentlyContinue
+       Remove-Variable pw, cred, secret -ErrorAction SilentlyContinue
+   }
    ```
 
-   Pastikan hasil test integrasi **PASS**, bukan **SKIP**. Setiap test PostgreSQL membuat schema acak sendiri dan menghapusnya saat selesai. Test session lama dapat membaca `.env` sebagai fallback; test platform membutuhkan variabel proses seperti langkah 3. Tanpa koneksi test yang siap, unit test dapat dijalankan tanpa fallback lama dengan `go test ./... -count=1 -skip '^TestPostgresSessionStoreLifecycle$'`; test platform akan **SKIP** dan belum membuktikan perilaku PostgreSQL.
+   Ganti nama role/host/port sesuai database uji milikmu; bila kata sandi memakai karakter khusus, `EscapeDataString` sudah meng-*URL-encode*-nya. Pastikan tes PostgreSQL **PASS**, bukan **SKIP**, terutama `TestPostgresEndToEndWebFlow` dan `TestPostgresMigrationServiceCommitAndRollback`. Jangan membagikan URL lengkap atau isi `.env`. Tanpa URL uji, hanya jalankan tes non-integrasi secara terpisah; hasil tersebut tidak membuktikan PostgreSQL.
 
 Jika mengubah file `.templ`, jalankan generator lebih dahulu atau gunakan `make test`. Test handler HTTP dapat memakai `net/http/httptest`. Setiap fitur backend perlu menguji alur berhasil, kegagalan, dan penolakan akses sesuai kebutuhan fitur.
 
@@ -241,16 +218,19 @@ Jika mengubah file `.templ`, jalankan generator lebih dahulu atau gunakan `make 
 | Nama | Status | Keterangan |
 |---|---|---|
 | `PORT` | Digunakan | Port HTTP; default `8080`. |
-| `DATABASE_URL` | Belum digunakan | Koneksi database target yang nanti dikelola aplikasi; bukan storage session/user platform. |
+| `DATABASE_URL` | Tidak dipakai aplikasi | Koneksi target dikelola melalui halaman admin; bukan storage platform. |
 | `PLATFORM_DATABASE_URL` | Digunakan | Koneksi PostgreSQL platform untuk akun, session, dan migration internal. |
 | `CSRF_AUTH_KEY` | Digunakan | Secret hex 64 karakter (32 byte) untuk proteksi CSRF; jangan commit. |
+| `DATABASE_CREDENTIAL_KEY` | Wajib | Kunci hex 64 karakter (32 byte) untuk enkripsi kredensial koneksi; harus berbeda dari `CSRF_AUTH_KEY`. |
 | `INITIAL_ADMIN_USERNAME` | Bootstrap awal | Username admin pertama; hanya diperlukan jika tabel `users` kosong. |
 | `INITIAL_ADMIN_PASSWORD` | Bootstrap awal | Password admin pertama; hanya diperlukan jika tabel `users` kosong dan dihapus dari `.env` setelah bootstrap. |
 | `APP_ENV` | Opsional | `development` secara default; gunakan `production` pada deployment. |
 | `SECURE_COOKIES` | Opsional | `false` secara default untuk HTTP lokal; wajib `true` ketika `APP_ENV=production`. |
 | `PLATFORM_TEST_DATABASE_URL` | Test integrasi opsional | Wajib menunjuk database PostgreSQL khusus pengujian; test membuat dan menghapus schema terisolasi. |
+| `TARGET_TEST_DATABASE_URL` | Test integrasi opsional | Database target disposable untuk viewer, migration, dan tes HTTP gabungan. |
+| `MIGRATION_READONLY_TEST_DATABASE_URL` | Test integrasi opsional | Database disposable untuk tes riwayat baca-saja dan kegagalan draft. |
 
-Aplikasi membaca `.env` jika file tersedia, membuka koneksi dari `PLATFORM_DATABASE_URL`, lalu menerapkan migration internal secara otomatis saat startup. Jangan memakai koneksi database target pengguna untuk menyimpan akun atau session platform. `DATABASE_URL` tetap disediakan untuk koneksi database target pada fitur berikutnya. Jangan membagikan isi `.env` atau memasukkan kredensial ke Git.
+Aplikasi membaca `.env` jika file tersedia, membuka koneksi dari `PLATFORM_DATABASE_URL`, lalu menerapkan migration platform secara otomatis saat startup. Jangan memakai koneksi database target pengguna untuk menyimpan akun atau session platform. Jangan membagikan isi `.env` atau memasukkan kredensial ke Git.
 
 Session memakai cookie opaque `session_id`; token hanya disimpan sebagai hash di PostgreSQL. Nilai idle 30 menit, absolute 12 jam, rotasi 15 menit, dan grace period 30 detik adalah kebijakan yang digunakan. Cookie produksi menggunakan `Secure`; semua request yang mengubah state, termasuk login/logout, dilindungi CSRF.
 
@@ -260,7 +240,7 @@ Session memakai cookie opaque `session_id`; token hanya disimpan sebagai hash di
 - **Halaman Templ tidak sesuai perubahan terakhir:** jalankan `go run github.com/a-h/templ/cmd/templ@v0.3.960 generate`.
 - **Error `malformed go.sum`:** periksa perubahan `go.sum`, lalu jalankan `go mod tidy`; jangan menambahkan baris checksum secara manual.
 - **CSS tidak ditemukan:** pastikan server dijalankan dari root repository agar path `web/static` ditemukan.
-- **Test PostgreSQL session dilewati:** atur `PLATFORM_TEST_DATABASE_URL` ke database pengujian khusus. Jangan arahkan ke database development atau production.
+- **Tes PostgreSQL `SKIP`:** atur ketiga URL database uji di environment proses. Jangan arahkan ke database development atau production.
 - **`could not create isolated test schema`:** pastikan role/password pada URL test benar-benar dapat masuk ke `platform_test`, role memiliki izin `CREATE` pada database, dan variabel environment proses sudah dimuat ulang setelah `.env` diedit. Beberapa instalasi PostgreSQL di komputer yang sama dapat memakai port berbeda.
 - **Startup meminta bootstrap admin:** isi `INITIAL_ADMIN_USERNAME` dan `INITIAL_ADMIN_PASSWORD` hanya saat database platform belum memiliki user.
 - **CSRF key tidak valid:** atur `CSRF_AUTH_KEY` sebagai 64 karakter hex (32 byte acak).

@@ -215,6 +215,48 @@ func TestRequireSessionRotatesAndHonorsGraceAndAbsoluteExpiration(t *testing.T) 
 	}
 }
 
+func TestAnonymousHomeRedirectsToLoginButOtherRoutesStayUnauthorized(t *testing.T) {
+	store := newFakeSessionStore()
+	manager := newTestSessionManager(t, store)
+	protected := manager.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	home := httptest.NewRecorder()
+	protected.ServeHTTP(home, httptest.NewRequest(http.MethodGet, "/", nil))
+	if home.Code != http.StatusSeeOther || home.Header().Get("Location") != "/login" {
+		t.Fatalf("anonymous home = %d %q, want 303 to /login", home.Code, home.Header().Get("Location"))
+	}
+
+	other := httptest.NewRecorder()
+	protected.ServeHTTP(other, httptest.NewRequest(http.MethodGet, "/private", nil))
+	if other.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous protected route = %d, want 401", other.Code)
+	}
+
+	login := httptest.NewRecorder()
+	if err := manager.Create(login, httptest.NewRequest(http.MethodPost, "/login", nil), LoginProof{UserID: "user-1", passwordHash: "test-hash"}); err != nil {
+		t.Fatal(err)
+	}
+	cookie := login.Result().Cookies()[0]
+	authorized := httptest.NewRequest(http.MethodGet, "/", nil)
+	authorized.AddCookie(cookie)
+	page := httptest.NewRecorder()
+	protected.ServeHTTP(page, authorized)
+	if page.Code != http.StatusNoContent {
+		t.Fatalf("authenticated home = %d, want 204", page.Code)
+	}
+
+	store.sessions[1].revoked = true
+	revoked := httptest.NewRequest(http.MethodGet, "/", nil)
+	revoked.AddCookie(cookie)
+	redirect := httptest.NewRecorder()
+	protected.ServeHTTP(redirect, revoked)
+	if redirect.Code != http.StatusSeeOther || redirect.Header().Get("Location") != "/login" {
+		t.Fatalf("revoked home = %d %q, want 303 to /login", redirect.Code, redirect.Header().Get("Location"))
+	}
+}
+
 func TestIdleExpirationAndLogoutRevokeSession(t *testing.T) {
 	store := newFakeSessionStore()
 	manager := newTestSessionManager(t, store)

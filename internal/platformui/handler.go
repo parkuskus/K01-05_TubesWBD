@@ -169,8 +169,16 @@ func (h *Handler) userAction(w http.ResponseWriter, r *http.Request) {
 			err = platform.ErrInvalidInput
 			break
 		}
+		if r.PostForm.Get("admin") == "false" && r.PostForm.Get("confirm") != "true" {
+			err = platform.ErrInvalidInput
+			break
+		}
 		err = h.service.SetPlatformAdmin(r.Context(), actor, contracts.UserID(id), r.PostForm.Get("admin") == "true")
 	case "delete":
+		if r.PostForm.Get("confirm") != "true" {
+			err = platform.ErrInvalidInput
+			break
+		}
 		err = h.service.DeleteUser(r.Context(), actor, contracts.UserID(id))
 	default:
 		http.NotFound(w, r)
@@ -260,6 +268,10 @@ func (h *Handler) groupAction(w http.ResponseWriter, r *http.Request) {
 	case "name":
 		err = h.service.RenameGroup(r.Context(), actor, group, r.PostForm.Get("name"))
 	case "delete":
+		if r.PostForm.Get("confirm") != "true" {
+			err = platform.ErrInvalidInput
+			break
+		}
 		err = h.service.DeleteGroup(r.Context(), actor, group)
 	case "members":
 		user := r.PostForm.Get("user_id")
@@ -268,6 +280,10 @@ func (h *Handler) groupAction(w http.ResponseWriter, r *http.Request) {
 		}
 		member := r.PostForm.Get("member")
 		if member != "true" && member != "false" {
+			err = platform.ErrInvalidInput
+			break
+		}
+		if member == "false" && r.PostForm.Get("confirm") != "true" {
 			err = platform.ErrInvalidInput
 			break
 		}
@@ -280,6 +296,10 @@ func (h *Handler) groupAction(w http.ResponseWriter, r *http.Request) {
 		var level int
 		level, err = strconv.Atoi(r.PostForm.Get("level"))
 		if err != nil || level < int(contracts.AccessNone) || level > int(contracts.AccessViewEdit) {
+			err = platform.ErrInvalidInput
+			break
+		}
+		if level == int(contracts.AccessNone) && r.PostForm.Get("confirm") != "true" {
 			err = platform.ErrInvalidInput
 			break
 		}

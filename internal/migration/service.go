@@ -114,7 +114,7 @@ func (s *Service) UpdateDraft(ctx context.Context, userID contracts.UserID, dbID
 }
 
 // jalankan draft migration yang udah disimpan di dalam transaksi
-func (s *Service) ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64) (MigrationRecord, error) {
+func (s *Service) ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64, reviewed string) (MigrationRecord, error) {
 	if err := validateIdentity(userID, dbID); err != nil {
 		return MigrationRecord{}, err
 	}
@@ -129,7 +129,7 @@ func (s *Service) ExecuteMigration(ctx context.Context, userID contracts.UserID,
 	if err != nil {
 		return MigrationRecord{}, err
 	}
-	return store.ExecuteDraft(ctx, version, userID, s.currentTime())
+	return store.ExecuteDraft(ctx, version, userID, s.currentTime(), reviewed)
 }
 
 // buat dan langsung eksekusi sql migration baru di dalam transaksi

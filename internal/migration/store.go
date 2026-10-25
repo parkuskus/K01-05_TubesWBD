@@ -247,12 +247,15 @@ func (s *PostgresStore) GetByID(ctx context.Context, id int64) (MigrationRecord,
 }
 
 // jalankan draft migration berdasarkan nomor versi di dalam transaksi
-func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, executedBy contracts.UserID, now time.Time) (MigrationRecord, error) {
+func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, executedBy contracts.UserID, now time.Time, reviewed string) (MigrationRecord, error) {
 	if version <= 0 {
 		return MigrationRecord{}, ErrInvalidVersion
 	}
 	if strings.TrimSpace(string(executedBy)) == "" {
 		return MigrationRecord{}, ErrInvalidUser
+	}
+	if _, err := s.GetByVersion(ctx, version); err != nil {
+		return MigrationRecord{}, err
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -263,6 +266,13 @@ func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, execute
 		return MigrationRecord{}, err
 	}
 	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE if3110_platform.migration_history IN EXCLUSIVE MODE`); err != nil {
+		if missingHistory(err) {
+			return MigrationRecord{}, ErrMigrationNotFound
+		}
+		return MigrationRecord{}, err
+	}
 
 	row := tx.QueryRowContext(ctx, `
 		SELECT id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at
@@ -282,6 +292,18 @@ func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, execute
 	}
 	if record.Status != StatusDraft {
 		return MigrationRecord{}, ErrMigrationAlreadyApplied
+	}
+	if reviewed == "" || reviewed != reviewedDraft(record) {
+		return MigrationRecord{}, ErrVersionConflict
+	}
+	var predecessorPending bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM if3110_platform.migration_history WHERE version < $1 AND status <> 'APPLIED'
+	)`, version).Scan(&predecessorPending); err != nil {
+		return MigrationRecord{}, err
+	}
+	if predecessorPending {
+		return MigrationRecord{}, ErrMigrationOrder
 	}
 
 	if _, execErr := tx.ExecContext(ctx, record.SQLText); execErr != nil {
@@ -335,6 +357,15 @@ func (s *PostgresStore) RunNew(ctx context.Context, title, sqlText string, execu
 
 	if _, err := tx.ExecContext(ctx, `LOCK TABLE if3110_platform.migration_history IN EXCLUSIVE MODE`); err != nil {
 		return MigrationRecord{}, err
+	}
+	var predecessorPending bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM if3110_platform.migration_history WHERE status <> 'APPLIED'
+	)`).Scan(&predecessorPending); err != nil {
+		return MigrationRecord{}, err
+	}
+	if predecessorPending {
+		return MigrationRecord{}, ErrMigrationOrder
 	}
 
 	var nextVersion int64

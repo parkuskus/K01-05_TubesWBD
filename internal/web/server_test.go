@@ -121,7 +121,7 @@ func (f *fakeMigrationService) UpdateDraft(ctx context.Context, userID contracts
 	return migration.MigrationRecord{Version: version, Title: title, SQLText: sqlText, Status: migration.StatusDraft, CreatedBy: userID}, nil
 }
 
-func (f *fakeMigrationService) ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64) (migration.MigrationRecord, error) {
+func (f *fakeMigrationService) ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64, reviewed string) (migration.MigrationRecord, error) {
 	if err := f.authorizer.RequireDatabaseAccess(ctx, userID, dbID, contracts.ActionRunMigration); err != nil {
 		return migration.MigrationRecord{}, err
 	}
@@ -218,9 +218,8 @@ func TestHomePageHidesAdminLinksFromNonAdmin(t *testing.T) {
 func TestMountedRoutesEnforceSessionCSRFAndMigrationPrecedence(t *testing.T) {
 	handler, sessions, _ := newFullTestServer(t)
 
-	// 1. Without an active session, all protected GET routes return 401.
+	// 1. Without an active session, protected GET routes other than home return 401.
 	for _, path := range []string{
-		"/",
 		"/platform/users",
 		"/platform/groups",
 		"/databases/",
@@ -288,7 +287,7 @@ func TestMountedRoutesEnforceSessionCSRFAndMigrationPrecedence(t *testing.T) {
 	sessions.createdFor = "3"
 	editorResp := httptest.NewRecorder()
 	handler.ServeHTTP(editorResp, httptest.NewRequest(http.MethodGet, "http://example.com/databases/10/migrations/new", nil))
-	if editorResp.Code != http.StatusOK || !strings.Contains(editorResp.Body.String(), "Migration Query Editor") {
+	if editorResp.Code != http.StatusOK || !strings.Contains(editorResp.Body.String(), "Buat migration") {
 		t.Fatalf("view-edit GET /databases/10/migrations/new status = %d", editorResp.Code)
 	}
 

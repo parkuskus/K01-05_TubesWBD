@@ -221,10 +221,10 @@ func TestAdminUserAndGroupForms(t *testing.T) {
 		{"/platform/users/2/username", url.Values{"username": {"renamed"}}},
 		{"/platform/users/2/password", url.Values{"password": {"different-secret"}}},
 		{"/platform/users/2/admin", url.Values{"admin": {"true"}}},
-		{"/platform/users/2/delete", url.Values{}},
+		{"/platform/users/2/delete", url.Values{"confirm": {"true"}}},
 		{"/platform/groups", url.Values{"name": {"reviewers"}}},
 		{"/platform/groups/3/name", url.Values{"name": {"renamed-group"}}},
-		{"/platform/groups/3/delete", url.Values{}},
+		{"/platform/groups/3/delete", url.Values{"confirm": {"true"}}},
 	} {
 		tc.form.Set("gorilla.csrf.Token", token)
 		if w := adminPost(h, tc.path, "1", tc.form, cookies); w.Code != 303 {
@@ -248,8 +248,8 @@ func TestAdminMembershipAndGrantForms(t *testing.T) {
 	}{
 		{"/platform/groups/3/members", url.Values{"user_id": {"2"}, "member": {"true"}}},
 		{"/platform/groups/3/grants", url.Values{"database_id": {"7"}, "level": {"2"}}},
-		{"/platform/groups/3/members", url.Values{"user_id": {"2"}, "member": {"false"}}},
-		{"/platform/groups/3/grants", url.Values{"database_id": {"7"}, "level": {"0"}}},
+		{"/platform/groups/3/members", url.Values{"user_id": {"2"}, "member": {"false"}, "confirm": {"true"}}},
+		{"/platform/groups/3/grants", url.Values{"database_id": {"7"}, "level": {"0"}, "confirm": {"true"}}},
 	} {
 		tc.form.Set("gorilla.csrf.Token", token)
 		f.actor = ""
@@ -262,6 +262,43 @@ func TestAdminMembershipAndGrantForms(t *testing.T) {
 	}
 	if f.calls != 4 || len(f.members["3"]) != 0 || len(f.grants["3"]) != 0 {
 		t.Fatalf("membership/grants: %+v", f)
+	}
+}
+
+func TestAdminDestructiveConfirmation(t *testing.T) {
+	f, h := testAdmin(t)
+	cookies, token := adminToken(t, h, "/platform/groups/3")
+	for _, tc := range []struct {
+		path string
+		form url.Values
+	}{
+		{"/platform/users/1/delete", url.Values{}},
+		{"/platform/users/1/admin", url.Values{"admin": {"false"}}},
+		{"/platform/groups/3/delete", url.Values{}},
+		{"/platform/groups/3/members", url.Values{"user_id": {"2"}, "member": {"false"}}},
+		{"/platform/groups/3/grants", url.Values{"database_id": {"7"}, "level": {"0"}}},
+	} {
+		tc.form.Set("gorilla.csrf.Token", token)
+		w := adminPost(h, tc.path, "1", tc.form, cookies)
+		if w.Code != http.StatusBadRequest || f.calls != 0 {
+			t.Fatalf("unconfirmed %s: status=%d, service calls=%d", tc.path, w.Code, f.calls)
+		}
+	}
+	f.members["3"] = []platform.User{{ID: "2", Username: "anggota"}}
+	f.grants["3"] = []platform.Grant{{GroupID: "3", DatabaseID: "7", Level: contracts.AccessViewOnly}}
+	f.users[0].Username = `<owner&>`
+	f.groups[0].Name = `<operators&>`
+	for _, path := range []string{"/platform/users", "/platform/groups", "/platform/groups/3"} {
+		w := adminGet(h, path, "1")
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `name="confirm" value="true" required`) {
+			t.Fatalf("GET %s missing confirmation checkbox: %d", path, w.Code)
+		}
+		if strings.Contains(w.Body.String(), `<owner&>`) || strings.Contains(w.Body.String(), `<operators&>`) {
+			t.Fatalf("GET %s rendered unescaped target name", path)
+		}
+	}
+	if w := adminGet(h, "/platform/groups/3", "1"); !strings.Contains(w.Body.String(), "anggota akan kehilangan akses") || !strings.Contains(w.Body.String(), "database ID 7") {
+		t.Fatal("group confirmations omit target or consequence")
 	}
 }
 
@@ -345,7 +382,7 @@ func TestAdminPasswordAndLastAdminErrorsAreSafe(t *testing.T) {
 		t.Fatalf("invalid password: %d %s", w.Code, w.Body.String())
 	}
 	f.err = platform.ErrConflict
-	w = adminPost(h, "/platform/users/1/admin", "1", url.Values{"admin": {"false"}, "gorilla.csrf.Token": {token}}, cookies)
+	w = adminPost(h, "/platform/users/1/admin", "1", url.Values{"admin": {"false"}, "confirm": {"true"}, "gorilla.csrf.Token": {token}}, cookies)
 	if w.Code != 409 || !f.users[0].IsPlatformAdmin {
 		t.Fatalf("last admin: %d", w.Code)
 	}

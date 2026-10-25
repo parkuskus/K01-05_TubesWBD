@@ -59,6 +59,10 @@ func TestStaleLoginProofDoesNotRedirectOrIssueSession(t *testing.T) {
 func (s *fakeSessions) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.authenticated {
+			if r.Method == http.MethodGet && r.URL.Path == "/" {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -143,8 +147,8 @@ func TestProtectedHomeAndLogoutRequireSessionAndCSRF(t *testing.T) {
 	handler, _, sessions := newTestServer(t)
 	unauthorized := httptest.NewRecorder()
 	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "http://example.com/", nil))
-	if unauthorized.Code != http.StatusUnauthorized {
-		t.Fatalf("anonymous home status = %d, want 401", unauthorized.Code)
+	if unauthorized.Code != http.StatusSeeOther || unauthorized.Header().Get("Location") != "/login" {
+		t.Fatalf("anonymous home status = %d location = %q, want 303 to /login", unauthorized.Code, unauthorized.Header().Get("Location"))
 	}
 
 	sessions.authenticated = true

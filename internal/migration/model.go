@@ -1,7 +1,9 @@
 package migration
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,6 +36,7 @@ var (
 	ErrInvalidUser             = errors.New("user ID is required")
 	ErrInvalidVersion          = errors.New("migration version must be positive")
 	ErrMigrationAlreadyApplied = errors.New("migration has already been executed and cannot be modified")
+	ErrMigrationOrder          = errors.New("earlier migrations must be applied before execution")
 	ErrVersionConflict         = errors.New("migration version conflict")
 )
 
@@ -63,6 +66,10 @@ type MigrationRecord struct {
 	ExecutedAt   *time.Time
 }
 
+func reviewedDraft(record MigrationRecord) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(record.Title+"\x00"+record.SQLText)))
+}
+
 func normalizeSQL(sqlText string) (string, error) {
 	trimmed := strings.TrimSpace(sqlText)
 	if trimmed == "" {
@@ -74,4 +81,3 @@ func normalizeSQL(sqlText string) (string, error) {
 func normalizeTitle(title string) string {
 	return strings.TrimSpace(title)
 }
-

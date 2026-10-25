@@ -1,18 +1,25 @@
-/* token desain teras data untuk modul administrasi platform dan migration */
+/* sistem desain modul administrasi platform & migration studio — teras data */
 :root {
-  --td-bg: #F6F7F5;
+  --td-bg: #F3F6F5;
   --td-surface: #FFFFFF;
-  --td-border: #D5DEDA;
-  --td-text: #1D2B29;
-  --td-muted: #485C58;
-  --td-primary: #176B5B;
-  --td-primary-hover: #0F4F43;
-  --td-success: #146B43;
-  --td-success-bg: #E8F5EE;
-  --td-warning: #8A5600;
-  --td-warning-bg: #FFF5E0;
-  --td-danger: #A12D32;
-  --td-danger-bg: #FDECEC;
+  --td-border: #D5E0DC;
+  --td-border-strong: #B3C5BE;
+  --td-text: #101D1B;
+  --td-text-secondary: #3B4F4B;
+  --td-muted: #5C726D;
+  --td-primary: #0F6B58;
+  --td-primary-hover: #0A5243;
+  --td-primary-subtle: #E6F4F0;
+  --td-success: #116941;
+  --td-success-bg: #E6F6EE;
+  --td-warning: #8A5200;
+  --td-warning-bg: #FFF7E6;
+  --td-danger: #A6262C;
+  --td-danger-hover: #821B20;
+  --td-danger-bg: #FDF0F0;
+  --td-code-bg: #0E1917;
+  --td-code-border: #233B36;
+  --td-code-text: #E6F3F0;
   --td-font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
   --td-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Consolas, monospace;
 }
@@ -20,7 +27,7 @@
 body:has(.platform-admin),
 body:has(.migration-shell) {
   display: block;
-  background: var(--td-bg);
+  background-color: var(--td-bg);
   color: var(--td-text);
   font-family: var(--td-font-sans);
 }
@@ -29,7 +36,7 @@ main:has(.platform-admin),
 main:has(.migration-shell) {
   box-sizing: border-box;
   width: 100%;
-  max-width: 76rem;
+  max-width: 78rem;
   min-width: 0;
   margin: 0 auto;
   padding: clamp(1rem, 4vw, 2.5rem);
@@ -39,7 +46,7 @@ main:has(.migration-shell) {
 .platform-admin,
 .migration-shell {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.35rem;
   width: 100%;
   min-width: 0;
   line-height: 1.55;
@@ -59,23 +66,25 @@ main:has(.migration-shell) {
 
 .platform-admin h1,
 .migration-shell h1 {
-  font-size: clamp(1.65rem, 3vw, 2.25rem);
-  font-weight: 700;
+  font-size: clamp(1.65rem, 3vw, 2.2rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
   line-height: 1.25;
   color: var(--td-text);
 }
 
 .platform-admin h2,
 .migration-shell h2 {
-  font-size: clamp(1.2rem, 2.2vw, 1.45rem);
-  font-weight: 650;
+  font-size: clamp(1.15rem, 2vw, 1.35rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
   line-height: 1.3;
   color: var(--td-text);
 }
 
 .migration-shell h3 {
   font-size: 1.05rem;
-  font-weight: 650;
+  font-weight: 700;
   color: var(--td-text);
 }
 
@@ -83,7 +92,7 @@ main:has(.migration-shell) {
 .migration-lead {
   margin-top: 0.35rem;
   max-width: 68ch;
-  color: var(--td-muted);
+  color: var(--td-text-secondary);
   font-size: 0.975rem;
 }
 
@@ -91,12 +100,14 @@ main:has(.migration-shell) {
 .migration-shell a {
   color: var(--td-primary);
   text-underline-offset: 0.2em;
-  font-weight: 500;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .platform-admin a:hover,
 .migration-shell a:hover {
   color: var(--td-primary-hover);
+  text-decoration: underline;
   text-decoration-thickness: 2px;
 }
 
@@ -112,27 +123,37 @@ main:has(.migration-shell) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.85rem;
-  padding-bottom: 0.85rem;
-  border-bottom: 1px solid var(--td-border);
-  font-size: 0.95rem;
+  gap: 0.4rem 0.65rem;
+  padding: 0.65rem 1.1rem;
+  background: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: 0.625rem;
+  box-shadow: 0 1px 2px rgba(16, 29, 27, 0.04);
+  font-size: 0.925rem;
+  color: var(--td-border-strong);
 }
 
 .platform-nav a,
-.migration-nav a,
-.platform-breadcrumb a,
-.migration-breadcrumb a {
+.migration-nav a {
   display: inline-flex;
   align-items: center;
-  min-height: 2.75rem;
+  min-height: 2.5rem;
+  padding: 0 0.65rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.platform-nav a:hover,
+.migration-nav a:hover {
+  background: var(--td-primary-subtle);
+  text-decoration: none;
 }
 
 .platform-nav a[aria-current="page"],
 .migration-nav a[aria-current="page"] {
+  background: var(--td-primary-subtle);
+  color: var(--td-primary);
   font-weight: 700;
-  color: var(--td-text);
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
 }
 
 .platform-breadcrumb,
@@ -141,8 +162,20 @@ main:has(.migration-shell) {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem 0.6rem;
+  padding: 0.45rem 0.9rem;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--td-border);
+  border-radius: 0.5rem;
   color: var(--td-muted);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  font-family: var(--td-font-mono);
+}
+
+.platform-breadcrumb a,
+.migration-breadcrumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
 }
 
 .platform-header,
@@ -152,6 +185,11 @@ main:has(.migration-shell) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
+  padding: 1.35rem 1.5rem;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F7FBFA 100%);
+  border: 1px solid var(--td-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05);
 }
 
 /* kartu, section, dan daftar pada platform admin */
@@ -162,12 +200,13 @@ main:has(.migration-shell) {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding: clamp(1rem, 2.5vw, 1.5rem);
+  padding: clamp(1.15rem, 2.5vw, 1.65rem);
   background: var(--td-surface);
   border: 1px solid var(--td-border);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05), 0 4px 12px -2px rgba(16, 29, 27, 0.03);
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
 }
 
 .platform-card-header {
@@ -176,46 +215,77 @@ main:has(.migration-shell) {
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #E8EFEA;
 }
 
 .platform-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
   color: var(--td-muted);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-family: var(--td-font-mono);
 }
 
 .platform-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.5rem), 1fr));
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .platform-admin form {
   display: grid;
-  gap: 0.6rem;
-  align-content: start;
+  gap: 0.65rem;
+  align-content: space-between;
   margin: 0;
   min-width: 0;
+  padding: 0.95rem;
+  background: #F9FBFA;
+  border: 1px solid #E3ECE8;
+  border-radius: 0.5rem;
 }
 
 .platform-form-danger {
-  padding: 0.85rem;
-  border: 1px solid #EBC6C8;
-  border-radius: 0.375rem;
-  background: #FFFDFD;
+  padding: 0.95rem;
+  border: 1px solid #F2BFC2 !important;
+  border-radius: 0.5rem;
+  background: #FFF9F9 !important;
 }
 
 .platform-danger-note {
   color: var(--td-danger);
-  font-size: 0.85rem;
-  line-height: 1.4;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.platform-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--td-text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.platform-confirm-label input[type="checkbox"] {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--td-danger);
 }
 
 .platform-field-note {
   color: var(--td-muted);
   font-size: 0.875rem;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .platform-list {
@@ -231,9 +301,11 @@ main:has(.migration-shell) {
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 0.75rem 1rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--td-border);
+  gap: 0.85rem 1.25rem;
+  padding: 0.85rem 1rem;
+  background: #FAFDFC;
+  border: 1px solid var(--td-border);
+  border-radius: 0.5rem;
 }
 
 .platform-item-info {
@@ -244,18 +316,28 @@ main:has(.migration-shell) {
   min-width: 0;
 }
 
-/* badge peran & status */
+/* badge peran & status dengan titik indikator */
 .platform-badge,
 .migration-status {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: 0.35rem;
-  font-size: 0.825rem;
-  font-weight: 650;
+  gap: 0.4rem;
+  padding: 0.22rem 0.68rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
   font-family: var(--td-font-mono);
   line-height: 1.3;
   border: 1px solid transparent;
+}
+
+.platform-badge::before,
+.migration-status::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .platform-badge-admin,
@@ -263,39 +345,40 @@ main:has(.migration-shell) {
 .migration-status-applied {
   color: var(--td-success);
   background: var(--td-success-bg);
-  border-color: #B7DFC9;
+  border-color: #AEE0C6;
 }
 
 .platform-badge-user,
 .platform-badge-view {
-  color: var(--td-muted);
+  color: var(--td-text-secondary);
   background: var(--td-bg);
-  border-color: var(--td-border);
+  border-color: var(--td-border-strong);
 }
 
 .migration-status-draft {
   color: var(--td-warning);
   background: var(--td-warning-bg);
-  border-color: #EBD29B;
+  border-color: #F0D196;
 }
 
 .migration-status-failed {
   color: var(--td-danger);
   background: var(--td-danger-bg);
-  border-color: #EBC6C8;
+  border-color: #F2BFC2;
 }
 
 /* form input, textarea, select, dan tombol */
 .platform-admin .form-field,
 .migration-field {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
   min-width: 0;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 650;
   color: var(--td-text);
 }
 
-.platform-admin input,
+.platform-admin input:not([type="checkbox"]),
 .platform-admin select,
 .migration-shell input:not([type="checkbox"]),
 .migration-shell select,
@@ -304,20 +387,33 @@ main:has(.migration-shell) {
   width: 100%;
   min-width: 0;
   min-height: 2.75rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid #9FB0AA;
-  border-radius: 0.35rem;
+  padding: 0.625rem 0.85rem;
+  border: 1px solid var(--td-border-strong);
+  border-radius: 0.375rem;
   background: var(--td-surface);
   color: var(--td-text);
   font: inherit;
+  font-size: 0.95rem;
   font-weight: 400;
+  box-shadow: 0 1px 2px rgba(16, 29, 27, 0.03);
 }
 
+/* dark ide-style sql editor */
 .migration-shell textarea[name="sql_text"] {
+  padding: 1rem 1.15rem;
+  background: var(--td-code-bg);
+  color: var(--td-code-text);
+  border: 1px solid var(--td-code-border);
+  border-radius: 0.5rem;
   font-family: var(--td-font-mono);
   font-size: 0.925rem;
-  line-height: 1.5;
+  line-height: 1.6;
   resize: vertical;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.migration-shell textarea[name="sql_text"]::placeholder {
+  color: #6E8F87;
 }
 
 .platform-admin button,
@@ -327,42 +423,49 @@ main:has(.migration-shell) {
   justify-content: center;
   box-sizing: border-box;
   min-height: 2.75rem;
-  padding: 0.6rem 1.1rem;
+  padding: 0.6rem 1.15rem;
   border: 1px solid transparent;
-  border-radius: 0.35rem;
-  background: var(--td-primary);
+  border-radius: 0.375rem;
+  background: linear-gradient(180deg, #137A65 0%, var(--td-primary) 100%);
   color: #FFFFFF;
   font: inherit;
-  font-weight: 600;
+  font-size: 0.925rem;
+  font-weight: 650;
   text-decoration: none;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 107, 88, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .platform-admin button:hover,
 .migration-btn:hover,
 .migration-btn-primary:hover {
-  background: var(--td-primary-hover);
+  background: linear-gradient(180deg, var(--td-primary) 0%, var(--td-primary-hover) 100%);
   color: #FFFFFF;
+  text-decoration: none;
 }
 
 .migration-btn-secondary {
   background: var(--td-surface);
   color: var(--td-text);
-  border-color: var(--td-border);
+  border-color: var(--td-border-strong);
+  box-shadow: 0 1px 2px rgba(16, 29, 27, 0.04);
 }
 
 .migration-btn-secondary:hover {
-  background: var(--td-bg);
-  color: var(--td-text);
+  background: var(--td-primary-subtle);
+  border-color: var(--td-primary);
+  color: var(--td-primary);
 }
 
 .platform-admin .btn-danger {
-  background: var(--td-danger);
+  background: linear-gradient(180deg, #B82B32 0%, var(--td-danger) 100%);
   color: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(166, 38, 44, 0.25);
 }
 
 .platform-admin .btn-danger:hover {
-  background: #7E2024;
+  background: var(--td-danger-hover);
   color: #FFFFFF;
 }
 
@@ -380,43 +483,55 @@ main:has(.migration-shell) {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--td-border);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
   background: var(--td-surface);
+  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05);
 }
 
 .migration-history-table {
   width: 100%;
-  min-width: 38rem;
+  min-width: 40rem;
   border-collapse: collapse;
   text-align: left;
-  font-size: 0.95rem;
+  font-size: 0.925rem;
 }
 
 .migration-history-table caption {
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.15rem;
   text-align: left;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--td-muted);
-  background: var(--td-bg);
+  background: #F6F9F8;
   border-bottom: 1px solid var(--td-border);
 }
 
-.migration-history-table th,
+.migration-history-table th {
+  padding: 0.75rem 1.15rem;
+  border-bottom: 1px solid var(--td-border);
+  background: #F3F7F5;
+  color: var(--td-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
 .migration-history-table td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--td-border);
-  vertical-align: top;
+  padding: 0.85rem 1.15rem;
+  border-bottom: 1px solid #E7EFEA;
+  vertical-align: middle;
 }
 
-.migration-history-table thead {
-  background: var(--td-bg);
-  color: var(--td-text);
-  font-weight: 650;
+.migration-history-table tbody tr:hover {
+  background: #F9FCFB;
 }
 
 .migration-history-table td:first-child {
   font-family: var(--td-font-mono);
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--td-primary);
 }
 
 /* editor form, metadata detail, sql preview, dan kotak peringatan */
@@ -424,23 +539,26 @@ main:has(.migration-shell) {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding: clamp(1rem, 2.5vw, 1.5rem);
+  padding: clamp(1.25rem, 2.5vw, 1.75rem);
   background: var(--td-surface);
   border: 1px solid var(--td-border);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.05), 0 4px 12px -2px rgba(16, 29, 27, 0.03);
   display: grid;
-  gap: 1.15rem;
+  gap: 1.25rem;
 }
 
 .migration-meta {
   box-sizing: border-box;
   width: 100%;
-  padding: clamp(1rem, 2.5vw, 1.35rem);
+  padding: clamp(1.15rem, 2.5vw, 1.5rem);
   background: var(--td-surface);
   border: 1px solid var(--td-border);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(16, 29, 27, 0.04);
   display: grid;
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.75rem 1.25rem;
 }
 
 .migration-sql-preview {
@@ -448,30 +566,30 @@ main:has(.migration-shell) {
   width: 100%;
   max-width: 100%;
   margin: 0;
-  padding: 1rem;
+  padding: 1.15rem 1.25rem;
   overflow-x: auto;
-  background: var(--td-bg);
-  border: 1px solid var(--td-border);
-  border-radius: 0.375rem;
-  color: var(--td-text);
+  background: var(--td-code-bg);
+  border: 1px solid var(--td-code-border);
+  border-radius: 0.5rem;
+  color: var(--td-code-text);
   font-family: var(--td-font-mono);
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .migration-warning {
   box-sizing: border-box;
   width: 100%;
-  padding: 1rem 1.15rem;
+  padding: 1.25rem 1.35rem;
   background: var(--td-warning-bg);
-  border: 1px solid #EBD29B;
-  border-left: 4px solid var(--td-warning);
-  border-radius: 0.375rem;
+  border: 1px solid #F0D196;
+  border-radius: 0.5rem;
   color: var(--td-text);
   display: grid;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .migration-warning h3 {
@@ -481,9 +599,12 @@ main:has(.migration-shell) {
 .migration-confirm-label {
   display: flex;
   align-items: flex-start;
-  gap: 0.65rem;
-  padding: 0.5rem 0;
-  font-weight: 600;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid #E5C585;
+  border-radius: 0.375rem;
+  font-weight: 650;
   cursor: pointer;
 }
 
@@ -498,21 +619,21 @@ main:has(.migration-shell) {
 /* pesan status kosong dan error */
 .platform-empty,
 .migration-empty {
-  padding: 1.25rem;
+  padding: 1.5rem;
   background: var(--td-surface);
-  border: 1px dashed var(--td-border);
-  border-radius: 0.5rem;
+  border: 1px dashed var(--td-border-strong);
+  border-radius: 0.625rem;
   color: var(--td-muted);
 }
 
 .migration-error,
 .migration-error-box {
-  padding: 0.9rem 1.1rem;
+  padding: 1rem 1.25rem;
   background: var(--td-danger-bg);
-  border: 1px solid #EBC6C8;
-  border-left: 4px solid var(--td-danger);
-  border-radius: 0.375rem;
+  border: 1px solid #F2BFC2;
+  border-radius: 0.5rem;
   color: var(--td-danger);
+  font-weight: 500;
 }
 
 /* responsif untuk layar tablet dan ponsel hingga 320px */
@@ -552,6 +673,6 @@ main:has(.migration-shell) {
 
   .migration-history-table th,
   .migration-history-table td {
-    padding: 0.55rem 0.65rem;
+    padding: 0.6rem 0.75rem;
   }
 }

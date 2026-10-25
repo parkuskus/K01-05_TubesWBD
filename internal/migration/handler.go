@@ -23,7 +23,7 @@ type MigrationService interface {
 	GetMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64) (MigrationRecord, error)
 	CreateDraft(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, title, sqlText string) (MigrationRecord, error)
 	UpdateDraft(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64, title, sqlText string) (MigrationRecord, error)
-	ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64) (MigrationRecord, error)
+	ExecuteMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, version int64, reviewed string) (MigrationRecord, error)
 	RunMigration(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, title, sqlText string) (MigrationRecord, error)
 }
 
@@ -302,7 +302,7 @@ func (h *Handler) executeMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.service.ExecuteMigration(r.Context(), userID, dbID, version)
+	record, err := h.service.ExecuteMigration(r.Context(), userID, dbID, version, r.PostForm.Get("reviewed_draft"))
 	if err != nil {
 		if record.Version > 0 && record.Status == StatusFailed {
 			renderComponent(w, r, http.StatusUnprocessableEntity, detailPage(DetailPageData{
@@ -366,6 +366,10 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error) {
 		http.Error(w, "migration tidak ditemukan", http.StatusNotFound)
 	case errors.Is(err, ErrMigrationAlreadyApplied):
 		http.Error(w, "migration sudah pernah dieksekusi", http.StatusConflict)
+	case errors.Is(err, ErrMigrationOrder):
+		http.Error(w, "Migration sebelumnya harus berstatus APPLIED sebelum versi ini dijalankan.", http.StatusConflict)
+	case errors.Is(err, ErrVersionConflict):
+		http.Error(w, "Draft berubah sejak ditinjau. Muat ulang detail migration dan periksa SQL sebelum menjalankan.", http.StatusConflict)
 	case errors.Is(err, ErrInvalidSQL), errors.Is(err, ErrInvalidVersion), errors.Is(err, ErrInvalidDatabaseID):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
