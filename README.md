@@ -2,7 +2,7 @@
 
 Aplikasi berbasis web untuk mengelola koneksi database PostgreSQL, melihat struktur schema dan isi tabel secara read-only, serta membuat dan menjalankan SQL migration dengan akses berbasis grup.
 
-Dibuat untuk Tugas Besar 2 IF3110 Pengembangan Aplikasi Berbasis Web.
+Dibuat untuk Tugas Besar Milestone 1 IF3110 Pengembangan Aplikasi Berbasis Web.
 
 ## Tech Stack
 
@@ -142,3 +142,11 @@ Jika mengubah file template `.templ`, jalankan generator sebelum build atau test
 ```bash
 go run github.com/a-h/templ/cmd/templ@v0.3.960 generate
 ```
+
+## Kontributor
+
+| Nama | NIM |
+| :--- | :---: |
+| Kevin Wirya Valerian | 13524019 |
+| Emilio Justin | 13524043 |
+| Muhammad Aufar Rizqi Kusuma | 13524061 |
