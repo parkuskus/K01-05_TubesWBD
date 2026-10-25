@@ -224,6 +224,7 @@ func TestMountedRoutesEnforceSessionCSRFAndMigrationPrecedence(t *testing.T) {
 		"/platform/groups",
 		"/databases/",
 		"/databases/connections/new",
+		"/databases/10/schemas/diff",
 		"/databases/10/migrations",
 		"/databases/10/migrations/new",
 		"/migrations?database_id=10",
@@ -246,6 +247,7 @@ func TestMountedRoutesEnforceSessionCSRFAndMigrationPrecedence(t *testing.T) {
 		{"/platform/users", http.StatusOK, "Pengguna platform"},
 		{"/platform/groups", http.StatusOK, "Grup platform"},
 		{"/databases/connections/new", http.StatusOK, "Konfigurasi koneksi"},
+		{"/databases/10/schemas/diff", http.StatusForbidden, ""},
 		{"/databases/10/migrations", http.StatusForbidden, ""},
 	} {
 		resp := httptest.NewRecorder()

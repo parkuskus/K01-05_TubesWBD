@@ -183,13 +183,15 @@ func TestViewerHTTPDeniesBeforeConnecting(t *testing.T) {
 type stubViewer struct {
 	err   error
 	empty bool
+	diff  SchemaDiff
+	calls int
 }
 
 func (v stubViewer) Schemas(context.Context, contracts.UserID, databaseID) ([]string, error) {
 	if v.empty {
 		return nil, v.err
 	}
-	return []string{"public"}, v.err
+	return []string{"public", "desired", "live", "archive"}, v.err
 }
 func (v stubViewer) Tables(context.Context, contracts.UserID, databaseID, string) ([]Table, error) {
 	if v.empty {
@@ -208,6 +210,55 @@ func (v stubViewer) Data(_ context.Context, _ contracts.UserID, _ databaseID, _,
 		return DataPage{Page: page}, v.err
 	}
 	return DataPage{Columns: []string{"label", "empty"}, Rows: [][]Cell{{{Text: "<script>alert(1)</script>"}, {Null: true}}}, Page: page, HasNext: true}, v.err
+}
+
+func (v stubViewer) Diff(context.Context, contracts.UserID, contracts.DatabaseID, string, string) (SchemaDiff, error) {
+	return v.diff, v.err
+}
+
+func TestSchemaDiffHTTPNavigationAccessAndEscaping(t *testing.T) {
+	h, handler, _ := testHandlers(t)
+	seedViewer(t, h)
+	h.drafts = &capturedDraft{}
+	h.viewer = stubViewer{diff: SchemaDiff{ReferenceSchema: "desired", TargetSchema: "live", Changes: []SchemaChange{{Kind: "column", Action: "add", Name: "<script>bad</script>", Table: "items", SQL: "ALTER TABLE live.items ADD COLUMN name text", Risk: RiskReview}}, SQL: "ALTER TABLE live.items ADD COLUMN name text;"}}
+	path := "/databases/1/schemas/diff?reference=desired&target=live"
+	for _, actor := range []string{"viewer", "editor"} {
+		w := requestPage(handler, path, actor)
+		body := w.Body.String()
+		if w.Code != 200 || !strings.Contains(body, "Bandingkan schema") || !strings.Contains(body, "&lt;script&gt;bad&lt;/script&gt;") || strings.Contains(body, "<script>") {
+			t.Fatalf("diff GET %s: %d, escaped=%t", actor, w.Code, !strings.Contains(body, "<script>"))
+		}
+		if strings.Contains(body, "Buat draft migration") != (actor == "editor") {
+			t.Fatalf("draft action visibility for %s", actor)
+		}
+	}
+	if w := requestPage(handler, "/databases/1/schemas", "viewer"); w.Code != 200 || !strings.Contains(w.Body.String(), `/databases/1/schemas/diff`) {
+		t.Fatal("schema list lost database-scoped diff link")
+	}
+	for _, actor := range []string{"admin", "stranger", ""} {
+		want := 403
+		if actor == "" {
+			want = 401
+		}
+		if w := requestPage(handler, path, actor); w.Code != want {
+			t.Fatalf("diff denied %s: got %d want %d", actor, w.Code, want)
+		}
+	}
+}
+
+func TestSchemaDiffHTTPRejectsInvalidChoicesAndEmptyDiff(t *testing.T) {
+	h, handler, _ := testHandlers(t)
+	seedViewer(t, h)
+	h.viewer = stubViewer{}
+	for _, path := range []string{"/databases/1/schemas/diff?reference=public&target=public", "/databases/1/schemas/diff?reference=pg_catalog&target=public"} {
+		if w := requestPage(handler, path, "viewer"); w.Code != 400 {
+			t.Fatalf("%s: got %d", path, w.Code)
+		}
+	}
+	w := requestPage(handler, "/databases/1/schemas/diff?reference=public&target=archive", "editor")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Tidak ada perubahan") || strings.Contains(w.Body.String(), "Buat draft migration") {
+		t.Fatalf("empty diff status=%d", w.Code)
+	}
 }
 
 func TestViewerEmptyPagesKeepRecoveryNavigation(t *testing.T) {

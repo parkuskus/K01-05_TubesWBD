@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/internal/contracts"
+	"if3110.local/db-platform/internal/migration"
 )
 
 func TestPostgresSchemaSnapshotIncludesTablesAndMarksUnsupportedObjects(t *testing.T) {
@@ -130,6 +131,76 @@ func TestPostgresSchemaSnapshotIncludesTablesAndMarksUnsupportedObjects(t *testi
 	}
 	if _, err := viewer.Snapshot(ctx, "viewer", connection.ID, "nonexistent_schema"); err != ErrNotFound {
 		t.Fatalf("unknown schema error = %v, want not found", err)
+	}
+}
+
+func TestPostgresSchemaDiffCreatesEditableDraftWithoutExecuting(t *testing.T) {
+	targetDB, cfg, _ := integrationDatabase(t, "TARGET_TEST_DATABASE_URL")
+	platformDB, _, _ := integrationDatabase(t, "PLATFORM_TEST_DATABASE_URL")
+	manager := integrationManager(t, platformDB)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		t.Fatal(err)
+	}
+	base := "draft_diff_" + hex.EncodeToString(suffix[:])
+	reference, target := base+"_ref", base+"_target"
+	refName, targetName := pgx.Identifier{reference}.Sanitize(), pgx.Identifier{target}.Sanitize()
+	if _, err := targetDB.ExecContext(ctx, "CREATE SCHEMA "+refName+"; CREATE SCHEMA "+targetName+"; CREATE TABLE "+pgx.Identifier{reference, "items"}.Sanitize()+" (id integer, label text); CREATE TABLE "+pgx.Identifier{target, "items"}.Sanitize()+" (id integer)"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := targetDB.ExecContext(context.Background(), "DROP SCHEMA "+refName+", "+targetName+" CASCADE"); err != nil {
+			t.Error("could not clean up draft fixture")
+		}
+	})
+	input := validInput()
+	input.Host, input.Port, input.Database, input.Username = cfg.Host, int(cfg.Port), cfg.Database, cfg.User
+	input.Password = &cfg.Password
+	if cfg.TLSConfig != nil {
+		input.SSLMode = "verify-full"
+		if cfg.TLSConfig.InsecureSkipVerify {
+			input.SSLMode = "require"
+		}
+	}
+	connection, err := manager.Create(ctx, "admin", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := &grantAuthorizer{grants: map[contracts.UserID]map[databaseID]contracts.AccessLevel{"editor": {connection.ID: contracts.AccessViewEdit}}}
+	viewer, err := NewViewer(authorizer, manager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := migration.NewService(authorizer, manager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff, err := viewer.Diff(ctx, "editor", connection.ID, reference, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diff.Changes) == 0 || diff.SQL == "" {
+		t.Fatal("fixture produced no candidate SQL")
+	}
+	record, err := service.CreateDraft(ctx, "editor", connection.ID, "Schema "+reference+" → "+target, diff.SQL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != migration.StatusDraft || record.SQLText != diff.SQL {
+		t.Fatalf("draft status/SQL mismatch: status=%s", record.Status)
+	}
+	record, err = service.UpdateDraft(ctx, "editor", connection.ID, record.Version, record.Title, diff.SQL+"\n-- reviewed")
+	if err != nil || record.Status != migration.StatusDraft {
+		t.Fatalf("cannot edit generated draft: %v", err)
+	}
+	var count int
+	if err := targetDB.QueryRowContext(ctx, `SELECT count(*) FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname='items' AND a.attnum>0 AND NOT a.attisdropped`, target).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("draft unexpectedly changed target table: %d columns", count)
 	}
 }
 
