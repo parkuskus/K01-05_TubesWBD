@@ -7,10 +7,10 @@ templ usersPage(users []platform.User, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
 		<nav class="platform-nav" aria-label="Administrasi">
-			<a href="/">Beranda</a> ·
-			<a href="/databases/">Database</a> ·
-			<a href="/platform/users" aria-current="page">Pengguna</a> ·
-			<a href="/platform/groups">Grup &amp; Akses</a> ·
+			<a href="/">Beranda</a>
+			<a href="/databases/">Database</a>
+			<a href="/platform/users" aria-current="page">Pengguna</a>
+			<a href="/platform/groups">Grup dan Akses</a>
 			<a href="/databases/connections/">Koneksi Database</a>
 		</nav>
 		<header class="platform-header">
@@ -27,7 +27,7 @@ templ usersPage(users []platform.User, token string) {
 				<div class="platform-card-header">
 					<h2>{ user.Username }</h2>
 					<p class="platform-meta">
-						<span>ID { string(user.ID) }</span> ·
+						<span>ID { string(user.ID) }</span>
 						if user.IsPlatformAdmin {
 							<span class="platform-badge platform-badge-admin">Administrator</span>
 						} else {
@@ -85,15 +85,15 @@ templ groupsPage(groups []platform.Group, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
 		<nav class="platform-nav" aria-label="Administrasi">
-			<a href="/">Beranda</a> ·
-			<a href="/databases/">Database</a> ·
-			<a href="/platform/users">Pengguna</a> ·
-			<a href="/platform/groups" aria-current="page">Grup &amp; Akses</a> ·
+			<a href="/">Beranda</a>
+			<a href="/databases/">Database</a>
+			<a href="/platform/users">Pengguna</a>
+			<a href="/platform/groups" aria-current="page">Grup dan Akses</a>
 			<a href="/databases/connections/">Koneksi Database</a>
 		</nav>
 		<header class="platform-header">
 			<h1>Grup platform</h1>
-			<p class="platform-lead">Akses ke database target diberikan melalui grup dengan tingkat izin View Only (lihat schema &amp; riwayat) atau View + Edit (buat &amp; jalankan migration).</p>
+			<p class="platform-lead">Akses ke database target diberikan melalui grup dengan tingkat izin View Only (lihat schema dan riwayat) atau View + Edit (buat dan jalankan migration).</p>
 		</header>
 		if len(groups) == 0 {
 			<div class="platform-empty">
@@ -104,7 +104,7 @@ templ groupsPage(groups []platform.Group, token string) {
 			<section class="platform-card" aria-label={ "Grup " + group.Name }>
 				<div class="platform-card-header">
 					<h2><a href={ templ.URL("/platform/groups/" + string(group.ID)) }>{ group.Name }</a></h2>
-					<p class="platform-meta">ID Grup { string(group.ID) } · <a href={ templ.URL("/platform/groups/" + string(group.ID)) }>Kelola anggota &amp; akses database</a></p>
+					<p class="platform-meta"><span>ID Grup { string(group.ID) }</span><a href={ templ.URL("/platform/groups/" + string(group.ID)) }>Kelola anggota dan akses database</a></p>
 				</div>
 				<div class="platform-actions">
 					<form method="post" action={ templ.URL("/platform/groups/" + string(group.ID) + "/name") }>
@@ -137,10 +137,10 @@ templ groupPage(id, name string, members []platform.User, grants []platform.Gran
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
 		<nav class="platform-nav" aria-label="Administrasi">
-			<a href="/">Beranda</a> ·
-			<a href="/databases/">Database</a> ·
-			<a href="/platform/users">Pengguna</a> ·
-			<a href="/platform/groups">Grup &amp; Akses</a> ·
+			<a href="/">Beranda</a>
+			<a href="/databases/">Database</a>
+			<a href="/platform/users">Pengguna</a>
+			<a href="/platform/groups">Grup dan Akses</a>
 			<a href="/databases/connections/">Koneksi Database</a>
 		</nav>
 		<nav class="platform-breadcrumb" aria-label="Breadcrumb">
@@ -188,7 +188,7 @@ templ groupPage(id, name string, members []platform.User, grants []platform.Gran
 				for _, grant := range grants {
 					<li class="platform-list-item">
 						<div class="platform-item-info">
-							<span>Database ID { string(grant.DatabaseID) }</span> ·
+							<span>Database ID { string(grant.DatabaseID) }</span>
 							if grant.Level == 2 {
 								<span class="platform-badge platform-badge-edit">View + Edit</span>
 							} else {

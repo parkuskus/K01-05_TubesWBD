@@ -32,7 +32,7 @@ func usersPage(users []platform.User, token string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<link rel=\"stylesheet\" href=\"/static/platform.css\"><section class=\"platform-admin\"><nav class=\"platform-nav\" aria-label=\"Administrasi\"><a href=\"/\">Beranda</a> · <a href=\"/databases/\">Database</a> · <a href=\"/platform/users\" aria-current=\"page\">Pengguna</a> · <a href=\"/platform/groups\">Grup &amp; Akses</a> · <a href=\"/databases/connections/\">Koneksi Database</a></nav><header class=\"platform-header\"><h1>Pengguna platform</h1><p class=\"platform-lead\">Platform Admin mengelola akun dan keanggotaan grup, namun tidak otomatis memiliki akses ke isi database target kecuali tergabung dalam grup yang diberi izin.</p></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<link rel=\"stylesheet\" href=\"/static/platform.css\"><section class=\"platform-admin\"><nav class=\"platform-nav\" aria-label=\"Administrasi\"><a href=\"/\">Beranda</a> <a href=\"/databases/\">Database</a> <a href=\"/platform/users\" aria-current=\"page\">Pengguna</a> <a href=\"/platform/groups\">Grup dan Akses</a> <a href=\"/databases/connections/\">Koneksi Database</a></nav><header class=\"platform-header\"><h1>Pengguna platform</h1><p class=\"platform-lead\">Platform Admin mengelola akun dan keanggotaan grup, namun tidak otomatis memiliki akses ke isi database target kecuali tergabung dalam grup yang diberi izin.</p></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -82,7 +82,7 @@ func usersPage(users []platform.User, token string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</span> · ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -328,7 +328,7 @@ func groupsPage(groups []platform.Group, token string) templ.Component {
 			templ_7745c5c3_Var19 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<link rel=\"stylesheet\" href=\"/static/platform.css\"><section class=\"platform-admin\"><nav class=\"platform-nav\" aria-label=\"Administrasi\"><a href=\"/\">Beranda</a> · <a href=\"/databases/\">Database</a> · <a href=\"/platform/users\">Pengguna</a> · <a href=\"/platform/groups\" aria-current=\"page\">Grup &amp; Akses</a> · <a href=\"/databases/connections/\">Koneksi Database</a></nav><header class=\"platform-header\"><h1>Grup platform</h1><p class=\"platform-lead\">Akses ke database target diberikan melalui grup dengan tingkat izin View Only (lihat schema &amp; riwayat) atau View + Edit (buat &amp; jalankan migration).</p></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<link rel=\"stylesheet\" href=\"/static/platform.css\"><section class=\"platform-admin\"><nav class=\"platform-nav\" aria-label=\"Administrasi\"><a href=\"/\">Beranda</a> <a href=\"/databases/\">Database</a> <a href=\"/platform/users\">Pengguna</a> <a href=\"/platform/groups\" aria-current=\"page\">Grup dan Akses</a> <a href=\"/databases/connections/\">Koneksi Database</a></nav><header class=\"platform-header\"><h1>Grup platform</h1><p class=\"platform-lead\">Akses ke database target diberikan melalui grup dengan tingkat izin View Only (lihat schema dan riwayat) atau View + Edit (buat dan jalankan migration).</p></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -378,33 +378,33 @@ func groupsPage(groups []platform.Group, token string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</a></h2><p class=\"platform-meta\">ID Grup ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</a></h2><p class=\"platform-meta\"><span>ID Grup ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(string(group.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platformui/pages.templ`, Line: 107, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platformui/pages.templ`, Line: 107, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, " · <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</span><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var24 templ.SafeURL
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/platform/groups/" + string(group.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platformui/pages.templ`, Line: 107, Col: 121}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/platformui/pages.templ`, Line: 107, Col: 130}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\">Kelola anggota &amp; akses database</a></p></div><div class=\"platform-actions\"><form method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\">Kelola anggota dan akses database</a></p></div><div class=\"platform-actions\"><form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -542,7 +542,7 @@ func groupPage(id, name string, members []platform.User, grants []platform.Grant
 			templ_7745c5c3_Var33 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<link rel=\"stylesheet\" href=\"/static/platform.css\"><section class=\"platform-admin\"><nav class=\"platform-nav\" aria-label=\"Administrasi\"><a href=\"/\">Beranda</a> · <a href=\"/databases/\">Database</a> · <a href=\"/platform/users\">Pengguna</a> · <a href=\"/platform/groups\">Grup &amp; Akses</a> · <a href=\"/databases/connections/\">Koneksi Database</a></nav><nav class=\"platform-breadcrumb\" aria-label=\"Breadcrumb\"><a href=\"/platform/groups\">Kembali ke grup</a> / <span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<link rel=\"stylesheet\" href=\"/static/platform.css\"><section class=\"platform-admin\"><nav class=\"platform-nav\" aria-label=\"Administrasi\"><a href=\"/\">Beranda</a> <a href=\"/databases/\">Database</a> <a href=\"/platform/users\">Pengguna</a> <a href=\"/platform/groups\">Grup dan Akses</a> <a href=\"/databases/connections/\">Koneksi Database</a></nav><nav class=\"platform-breadcrumb\" aria-label=\"Breadcrumb\"><a href=\"/platform/groups\">Kembali ke grup</a> / <span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -746,7 +746,7 @@ func groupPage(id, name string, members []platform.User, grants []platform.Grant
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</span> · ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
