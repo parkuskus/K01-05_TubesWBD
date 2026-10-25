@@ -76,18 +76,11 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	if err != nil || userID == "" {
 		t.Fatalf("Authenticate() = (%q, %v), want a user ID", userID, err)
 	}
-	if _, err := authenticator.Authenticate(ctx, "ROOT", "initial-password-123"); err != ErrInvalidCredentials {
-		t.Fatalf("case-mismatched username error = %v, want ErrInvalidCredentials", err)
+	if _, err := authenticator.Authenticate(ctx, "ROOT", "initial-password-123"); err != nil {
+		t.Fatalf("case-insensitive username login: %v", err)
 	}
-	lowerHash, err := HashPassword("lowercase-account-password")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO users (username, password_hash) VALUES ('root', $1)`, lowerHash); err != nil {
-		t.Fatalf("create account differing only by username case: %v", err)
-	}
-	if _, err := authenticator.Authenticate(ctx, "root", "lowercase-account-password"); err != nil {
-		t.Fatalf("authenticate case-distinct account: %v", err)
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (username, password_hash) VALUES ('root', 'test-hash')`); err == nil {
+		t.Fatal("database allowed a username differing only by case")
 	}
 	proof, err := authenticator.AuthenticateForSession(ctx, "root", "initial-password-123")
 	if err != nil {
@@ -103,8 +96,8 @@ func TestPostgresSessionStoreLifecycle(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&userCount); err != nil {
 		t.Fatal(err)
 	}
-	if userCount != 2 {
-		t.Fatalf("user count after case-distinct account and repeated bootstrap = %d, want 2", userCount)
+	if userCount != 1 {
+		t.Fatalf("user count after case-insensitive duplicate and repeated bootstrap = %d, want 1", userCount)
 	}
 	var storedPassword string
 	var isAdmin bool

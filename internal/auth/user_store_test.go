@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
@@ -13,11 +14,12 @@ type fakeUserStore struct {
 }
 
 func (s *fakeUserStore) FindByUsername(_ context.Context, username string) (userRecord, error) {
-	record, ok := s.users[username]
-	if !ok {
-		return userRecord{}, ErrInvalidCredentials
+	for key, record := range s.users {
+		if strings.EqualFold(key, username) {
+			return record, nil
+		}
 	}
-	return record, nil
+	return userRecord{}, ErrInvalidCredentials
 }
 
 func (s *fakeUserStore) EnsureInitialAdmin(_ context.Context, username, passwordHash string) error {
@@ -36,7 +38,7 @@ func (s *fakeUserStore) EnsureInitialAdmin(_ context.Context, username, password
 	return nil
 }
 
-func TestAuthenticatorRequiresExactUsernameCase(t *testing.T) {
+func TestAuthenticatorIgnoresUsernameCase(t *testing.T) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("correct horse battery staple"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
@@ -53,8 +55,8 @@ func TestAuthenticatorRequiresExactUsernameCase(t *testing.T) {
 	if userID != contracts.UserID("42") {
 		t.Fatalf("user ID = %q, want %q", userID, "42")
 	}
-	if _, err := authenticator.Authenticate(context.Background(), "  ADMIN ", "correct horse battery staple"); err != ErrInvalidCredentials {
-		t.Fatalf("case-mismatched username error = %v, want ErrInvalidCredentials", err)
+	if got, err := authenticator.Authenticate(context.Background(), "  ADMIN ", "correct horse battery staple"); err != nil || got != userID {
+		t.Fatalf("case-insensitive Authenticate() = (%q, %v), want (%q, nil)", got, err, userID)
 	}
 }
 

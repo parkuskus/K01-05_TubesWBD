@@ -116,7 +116,7 @@ func (s *postgresUserStore) FindByUsername(ctx context.Context, username string)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, username, password_hash, is_platform_admin
 		FROM users
-		WHERE username = $1`, username).Scan(
+		WHERE lower(username) = lower($1)`, username).Scan(
 		&id, &record.Username, &record.PasswordHash, &record.IsPlatformAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return userRecord{}, ErrInvalidCredentials

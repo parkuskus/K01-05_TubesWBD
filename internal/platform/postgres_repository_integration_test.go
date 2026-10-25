@@ -125,11 +125,11 @@ func TestAdminUsersSessionAndLastAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateUser(ctx, root, "member", "password"); !errors.Is(err, platform.ErrConflict) {
+	if _, err := s.CreateUser(ctx, root, " member ", "password"); !errors.Is(err, platform.ErrConflict) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	list, err := s.ListUsers(ctx, root)
-	if err != nil || len(list) != 2 || list[1].Username != "member" {
+	if err != nil || len(list) != 2 || list[1].Username != "MEMBER" {
 		t.Fatalf("list users: %v (%v)", list, err)
 	}
 	if _, err := login.Authenticate(ctx, "member", "original-password"); err != nil {

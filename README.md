@@ -118,7 +118,7 @@ make test      # Generate lalu jalankan seluruh test
 
 Saat startup, `cmd/web` memuat konfigurasi, menghubungi `PLATFORM_DATABASE_URL`, menerapkan migration platform, dan membuat admin pertama bila tabel pengguna masih kosong. Semua halaman kerja memakai sesi; POST memakai CSRF. Route utama:
 
-Username peka terhadap huruf besar-kecil; spasi di awal/akhir dihapus. Akun yang sudah ada sebelum aturan ini berubah tersimpan dalam lowercase, sehingga username lama harus dimasukkan dalam lowercase. Password tetap peka huruf besar-kecil.
+Username tidak peka terhadap huruf besar-kecil; spasi di awal/akhir dihapus. Nama tampilan mempertahankan kapitalisasi saat dibuat, tetapi variasi kapitalisasi tetap menunjuk akun yang sama dan tidak dapat didaftarkan sebagai akun lain. Password tetap peka huruf besar-kecil. Saat aturan ini diterapkan, startup berhenti jika database sudah memiliki username yang hanya berbeda kapitalisasi; pemilik harus menyelesaikan benturan tersebut secara manual, tanpa akun yang dihapus otomatis.
 
 | Route | Fungsi |
 |---|---|
