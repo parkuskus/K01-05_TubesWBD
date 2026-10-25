@@ -31,10 +31,15 @@ type createAccessChecker interface {
 	RequireCreateAccess(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID) error
 }
 
+type adminAccessChecker interface {
+	IsAdmin(ctx context.Context, userID contracts.UserID) bool
+}
+
 // http handler buat halaman dan aksi migration
 type Handler struct {
 	service      MigrationService
 	createAccess createAccessChecker
+	adminAccess  adminAccessChecker
 	currentUser  func(*http.Request) (contracts.UserID, bool)
 }
 
@@ -46,11 +51,20 @@ func NewHandler(service MigrationService) (*Handler, error) {
 	if !ok {
 		return nil, ErrInvalidHandlerConfig
 	}
+	adminChecker, _ := service.(adminAccessChecker)
 	return &Handler{
 		service:      service,
 		createAccess: checker,
+		adminAccess:  adminChecker,
 		currentUser:  auth.CurrentUser,
 	}, nil
+}
+
+func (h *Handler) isAdmin(ctx context.Context, userID contracts.UserID) bool {
+	if h.adminAccess == nil {
+		return false
+	}
+	return h.adminAccess.IsAdmin(ctx, userID)
 }
 
 // daftarkan semua route modul migration ke mux
@@ -121,6 +135,7 @@ func (h *Handler) listHistory(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:  auth.CSRFToken(r),
 		Records:    records,
 		CanEdit:    canEdit,
+		IsAdmin:    h.isAdmin(r.Context(), userID),
 	}))
 }
 
@@ -138,6 +153,7 @@ func (h *Handler) newMigrationPage(w http.ResponseWriter, r *http.Request) {
 	renderComponent(w, r, http.StatusOK, editorPage(EditorPageData{
 		DatabaseID: string(dbID),
 		CSRFToken:  auth.CSRFToken(r),
+		IsAdmin:    h.isAdmin(r.Context(), userID),
 	}))
 }
 
@@ -242,6 +258,7 @@ func (h *Handler) getMigrationDetail(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:  auth.CSRFToken(r),
 		Record:     record,
 		CanEdit:    canEdit,
+		IsAdmin:    h.isAdmin(r.Context(), userID),
 	}))
 }
 

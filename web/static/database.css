@@ -35,7 +35,8 @@ main:has(> .db-module) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 28px;
+  justify-content: space-between;
+  gap: 24px;
 }
 
 .db-nav a {
@@ -47,23 +48,42 @@ main:has(> .db-module) {
   transition: color 120ms ease;
 }
 
-.db-nav a:hover {
+.db-nav a:hover,
+.db-nav a[aria-current="page"] {
   color: #faf9f5;
   text-decoration: none;
+}
+
+.db-nav a[aria-current="page"] {
+  font-weight: 600;
 }
 
 .db-breadcrumb {
   width: 100vw;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
-  padding: 13px max(32px, calc((100vw - 1280px) / 2));
+  padding: 12px max(32px, calc((100vw - 1280px) / 2));
   background-color: #ebe8e0;
+  border-bottom: 1px solid #dcd8ce;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   font-size: 14px;
   color: #595750;
+}
+
+.db-context-info {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.db-context-name {
+  color: #141413;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .db-breadcrumb a {

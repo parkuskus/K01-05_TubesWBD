@@ -10,13 +10,14 @@ templ homeContent(csrfToken string, isAdmin bool) {
 	<section class="home-shell">
 		<div class="home-topbar">
 			<div class="home-topbar-inner">
-				<span class="home-brand-title">Teras Data</span>
-				<div class="home-topbar-right">
+				<a class="topnav-brand" href="/">Teras Data</a>
+				<div class="topnav-links">
+					<a class="home-topbar-link" href="/" aria-current="page">Beranda</a>
 					<a class="home-topbar-link" href="/databases/">Database</a>
 					if isAdmin {
 						<a class="home-topbar-link" href="/platform/users">Pengguna</a>
 						<a class="home-topbar-link" href="/platform/groups">Grup dan Akses</a>
-						<a class="home-topbar-link" href="/databases/connections/">Koneksi</a>
+						<a class="home-topbar-link" href="/databases/connections/">Kelola koneksi</a>
 					}
 					<form class="logout-form" action="/logout" method="post">
 						<input type="hidden" name="gorilla.csrf.Token" value={ csrfToken }/>
@@ -25,6 +26,13 @@ templ homeContent(csrfToken string, isAdmin bool) {
 				</div>
 			</div>
 		</div>
+		<nav class="home-breadcrumb" aria-label="Jejak navigasi">
+			<div class="home-breadcrumb-inner">
+				<div class="nav-path-trail">
+					<span aria-current="page">beranda</span>
+				</div>
+			</div>
+		</nav>
 		<div class="home-frame">
 			<header class="home-header">
 				<h1>Database Management Platform</h1>

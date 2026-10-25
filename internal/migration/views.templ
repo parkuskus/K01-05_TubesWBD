@@ -11,6 +11,7 @@ type HistoryPageData struct {
 	ErrorMessage string
 	Records      []MigrationRecord
 	CanEdit      bool
+	IsAdmin      bool
 }
 
 // data tampilan editor pembuatan migration baru
@@ -20,6 +21,7 @@ type EditorPageData struct {
 	ErrorMessage string
 	Title        string
 	SQLText      string
+	IsAdmin      bool
 }
 
 // data tampilan detail dan peninjauan satu migration
@@ -29,6 +31,7 @@ type DetailPageData struct {
 	ErrorMessage string
 	Record       MigrationRecord
 	CanEdit      bool
+	IsAdmin      bool
 }
 
 func formatVersion(version int64) string {
@@ -59,6 +62,22 @@ func executeMigrationURL(dbID string, version int64) string {
 	return detailMigrationURL(dbID, version) + "/execute"
 }
 
+templ migrationTopNav(dbID string, isAdmin bool) {
+	<nav class="migration-nav" aria-label="Navigasi utama">
+		<a class="topnav-brand" href="/">Teras Data</a>
+		<div class="topnav-links">
+			<a href="/">Beranda</a>
+			<a href="/databases/" aria-current="page">Database</a>
+			<a href={ templ.URL(schemasURL(dbID)) }>Lihat Schema</a>
+			if isAdmin {
+				<a href="/platform/users">Pengguna</a>
+				<a href="/platform/groups">Grup dan Akses</a>
+				<a href="/databases/connections/">Kelola koneksi</a>
+			}
+		</div>
+	</nav>
+}
+
 templ historyPage(data HistoryPageData) {
 	@ui.Layout("Riwayat Migration · " + data.DatabaseID, historyContent(data))
 }
@@ -66,17 +85,17 @@ templ historyPage(data HistoryPageData) {
 templ historyContent(data HistoryPageData) {
 	<section class="migration-shell">
 		<link rel="stylesheet" href="/static/platform.css"/>
-		<nav class="migration-nav" aria-label="Navigasi utama">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			<a href={ templ.URL(schemasURL(data.DatabaseID)) }>Lihat Schema</a>
-		</nav>
+		@migrationTopNav(data.DatabaseID, data.IsAdmin)
 		<nav class="migration-breadcrumb" aria-label="Jejak navigasi">
-			<a href="/databases/">Database</a>
-			<span aria-hidden="true">/</span>
-			<a href={ templ.URL(schemasURL(data.DatabaseID)) }>{ data.DatabaseID }</a>
-			<span aria-hidden="true">/</span>
-			<span aria-current="page">Riwayat Migration</span>
+			<a class="nav-back-btn" href={ templ.URL(schemasURL(data.DatabaseID)) }>← Kembali ke schema</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(schemasURL(data.DatabaseID)) }>{ data.DatabaseID }</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">migrations</span>
+			</div>
 		</nav>
 		<p class="eyebrow">Database · { data.DatabaseID }</p>
 		<header class="migration-header">
@@ -161,23 +180,27 @@ templ editorPage(data EditorPageData) {
 templ editorContent(data EditorPageData) {
 	<section class="migration-shell">
 		<link rel="stylesheet" href="/static/platform.css"/>
-		<nav class="migration-nav" aria-label="Navigasi utama">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			<a href={ templ.URL(schemasURL(data.DatabaseID)) }>Lihat Schema</a>
-		</nav>
+		@migrationTopNav(data.DatabaseID, data.IsAdmin)
 		<nav class="migration-breadcrumb" aria-label="Jejak navigasi">
-			<a href="/databases/">Database</a>
-			<span aria-hidden="true">/</span>
-			<a href={ templ.URL(schemasURL(data.DatabaseID)) }>{ data.DatabaseID }</a>
-			<span aria-hidden="true">/</span>
-			<a href={ templ.URL(historyURL(data.DatabaseID)) }>Riwayat Migration</a>
-			<span aria-hidden="true">/</span>
-			<span aria-current="page">Buat Baru</span>
+			<a class="nav-back-btn" href={ templ.URL(historyURL(data.DatabaseID)) }>← Kembali ke riwayat</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(schemasURL(data.DatabaseID)) }>{ data.DatabaseID }</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(historyURL(data.DatabaseID)) }>migrations</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">new</span>
+			</div>
 		</nav>
-		<h1>Buat migration</h1>
-		<p class="migration-lead">Tulis SQL untuk database { data.DatabaseID }. Simpan sebagai draft untuk meninjaunya sebelum dijalankan.</p>
-		<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
+		<p class="eyebrow">Database · { data.DatabaseID }</p>
+		<header class="migration-header">
+			<div>
+				<h1>Buat migration</h1>
+				<p class="migration-lead">Tulis SQL untuk database { data.DatabaseID }. Simpan sebagai draft untuk meninjaunya sebelum dijalankan.</p>
+			</div>
+		</header>
 		if data.ErrorMessage != "" {
 			<p class="error-message" role="alert">{ data.ErrorMessage }</p>
 		}
@@ -213,24 +236,27 @@ templ detailPage(data DetailPageData) {
 templ detailContent(data DetailPageData) {
 	<section class="migration-shell">
 		<link rel="stylesheet" href="/static/platform.css"/>
-		<nav class="migration-nav" aria-label="Navigasi utama">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			<a href={ templ.URL(schemasURL(data.DatabaseID)) }>Lihat Schema</a>
-		</nav>
+		@migrationTopNav(data.DatabaseID, data.IsAdmin)
 		<nav class="migration-breadcrumb" aria-label="Jejak navigasi">
-			<a href="/databases/">Database</a>
-			<span aria-hidden="true">/</span>
-			<a href={ templ.URL(schemasURL(data.DatabaseID)) }>{ data.DatabaseID }</a>
-			<span aria-hidden="true">/</span>
-			<a href={ templ.URL(historyURL(data.DatabaseID)) }>Riwayat Migration</a>
-			<span aria-hidden="true">/</span>
-			<span aria-current="page">#{ formatVersion(data.Record.Version) }</span>
+			<a class="nav-back-btn" href={ templ.URL(historyURL(data.DatabaseID)) }>← Kembali ke riwayat</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(schemasURL(data.DatabaseID)) }>{ data.DatabaseID }</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(historyURL(data.DatabaseID)) }>migrations</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">{ formatVersion(data.Record.Version) }</span>
+			</div>
 		</nav>
 		<p class="eyebrow">Database · { data.DatabaseID }</p>
-		<h1>Migration #{ formatVersion(data.Record.Version) }</h1>
-		<p class="migration-lead">Periksa detail eksekusi dan pernyataan SQL yang tercatat untuk versi migration ini.</p>
-		<p><a href={ templ.URL(historyURL(data.DatabaseID)) }>Kembali ke Riwayat Migration</a></p>
+		<header class="migration-header">
+			<div>
+				<h1>Migration #{ formatVersion(data.Record.Version) }</h1>
+				<p class="migration-lead">Periksa detail eksekusi dan pernyataan SQL yang tercatat untuk versi migration ini.</p>
+			</div>
+		</header>
 		if data.ErrorMessage != "" {
 			<p class="error-message" role="alert">{ data.ErrorMessage }</p>
 		}

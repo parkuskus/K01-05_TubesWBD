@@ -60,12 +60,12 @@ func homeContent(csrfToken string, isAdmin bool) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"home-shell\"><div class=\"home-topbar\"><div class=\"home-topbar-inner\"><span class=\"home-brand-title\">Teras Data</span><div class=\"home-topbar-right\"><a class=\"home-topbar-link\" href=\"/databases/\">Database</a> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"home-shell\"><div class=\"home-topbar\"><div class=\"home-topbar-inner\"><a class=\"topnav-brand\" href=\"/\">Teras Data</a><div class=\"topnav-links\"><a class=\"home-topbar-link\" href=\"/\" aria-current=\"page\">Beranda</a> <a class=\"home-topbar-link\" href=\"/databases/\">Database</a> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if isAdmin {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<a class=\"home-topbar-link\" href=\"/platform/users\">Pengguna</a> <a class=\"home-topbar-link\" href=\"/platform/groups\">Grup dan Akses</a> <a class=\"home-topbar-link\" href=\"/databases/connections/\">Koneksi</a>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<a class=\"home-topbar-link\" href=\"/platform/users\">Pengguna</a> <a class=\"home-topbar-link\" href=\"/platform/groups\">Grup dan Akses</a> <a class=\"home-topbar-link\" href=\"/databases/connections/\">Kelola koneksi</a>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -77,13 +77,13 @@ func homeContent(csrfToken string, isAdmin bool) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/home.templ`, Line: 22, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/home.templ`, Line: 23, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\">Keluar</button></form></div></div></div><div class=\"home-frame\"><header class=\"home-header\"><h1>Database Management Platform</h1><p class=\"home-lead\">Pilih database untuk melihat schema, tabel, dan data, atau kelola pengguna dan hak akses.</p></header><div class=\"home-grid\"><section class=\"home-card\" aria-label=\"Database\"><div><h2>Database</h2><p>Lihat daftar database, struktur tabel, isi data, dan riwayat migration SQL.</p></div><div class=\"home-actions\"><a class=\"button-primary\" href=\"/databases/\">Pilih database</a></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\">Keluar</button></form></div></div></div><nav class=\"home-breadcrumb\" aria-label=\"Jejak navigasi\"><div class=\"home-breadcrumb-inner\"><div class=\"nav-path-trail\"><span aria-current=\"page\">beranda</span></div></div></nav><div class=\"home-frame\"><header class=\"home-header\"><h1>Database Management Platform</h1><p class=\"home-lead\">Pilih database untuk melihat schema, tabel, dan data, atau kelola pengguna dan hak akses.</p></header><div class=\"home-grid\"><section class=\"home-card\" aria-label=\"Database\"><div><h2>Database</h2><p>Lihat daftar database, struktur tabel, isi data, dan riwayat migration SQL.</p></div><div class=\"home-actions\"><a class=\"button-primary\" href=\"/databases/\">Pilih database</a></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

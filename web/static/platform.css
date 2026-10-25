@@ -39,7 +39,8 @@ main:has(> .platform-admin) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 28px;
+  justify-content: space-between;
+  gap: 24px;
 }
 
 .migration-nav a,
@@ -54,11 +55,13 @@ main:has(> .platform-admin) {
 
 .migration-nav a:hover,
 .platform-nav a:hover,
+.migration-nav a[aria-current="page"],
 .platform-nav a[aria-current="page"] {
   color: #faf9f5;
   text-decoration: none;
 }
 
+.migration-nav a[aria-current="page"],
 .platform-nav a[aria-current="page"] {
   font-weight: 600;
 }
@@ -68,13 +71,14 @@ main:has(> .platform-admin) {
   width: 100vw;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
-  padding: 13px max(32px, calc((100vw - 1280px) / 2));
+  padding: 12px max(32px, calc((100vw - 1280px) / 2));
   background-color: #ebe8e0;
+  border-bottom: 1px solid #dcd8ce;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 48px;
+  gap: 14px;
+  margin-bottom: 36px;
   font-size: 14px;
   color: #595750;
 }

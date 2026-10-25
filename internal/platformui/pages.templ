@@ -3,16 +3,40 @@ package platformui
 import "strconv"
 import "if3110.local/db-platform/internal/platform"
 
+templ platformTopNav(active string) {
+	<nav class="platform-nav" aria-label="Administrasi">
+		<a class="topnav-brand" href="/">Teras Data</a>
+		<div class="topnav-links">
+			<a href="/">Beranda</a>
+			<a href="/databases/">Database</a>
+			if active == "users" {
+				<a href="/platform/users" aria-current="page">Pengguna</a>
+			} else {
+				<a href="/platform/users">Pengguna</a>
+			}
+			if active == "groups" {
+				<a href="/platform/groups" aria-current="page">Grup dan Akses</a>
+			} else {
+				<a href="/platform/groups">Grup dan Akses</a>
+			}
+			<a href="/databases/connections/">Kelola koneksi</a>
+		</div>
+	</nav>
+}
+
 // komponen tampilan halaman administrasi platform
 templ usersPage(users []platform.User, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
-		<nav class="platform-nav" aria-label="Administrasi">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			<a href="/platform/users" aria-current="page">Pengguna</a>
-			<a href="/platform/groups">Grup dan Akses</a>
-			<a href="/databases/connections/">Koneksi Database</a>
+		@platformTopNav("users")
+		<nav class="platform-breadcrumb" aria-label="Jejak navigasi">
+			<a class="nav-back-btn" href="/">← Kembali ke beranda</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/">platform</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">users</span>
+			</div>
 		</nav>
 		<header class="platform-split-header">
 			<div class="platform-header-copy">
@@ -111,12 +135,15 @@ templ usersPage(users []platform.User, token string) {
 templ groupsPage(groups []platform.Group, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
-		<nav class="platform-nav" aria-label="Administrasi">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			<a href="/platform/users">Pengguna</a>
-			<a href="/platform/groups" aria-current="page">Grup dan Akses</a>
-			<a href="/databases/connections/">Koneksi Database</a>
+		@platformTopNav("groups")
+		<nav class="platform-breadcrumb" aria-label="Jejak navigasi">
+			<a class="nav-back-btn" href="/">← Kembali ke beranda</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/">platform</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">groups</span>
+			</div>
 		</nav>
 		<header class="platform-split-header">
 			<div class="platform-header-copy">
@@ -189,15 +216,17 @@ templ groupsPage(groups []platform.Group, token string) {
 templ groupPage(id, name string, members []platform.User, grants []platform.Grant, token string) {
 	<link rel="stylesheet" href="/static/platform.css"/>
 	<section class="platform-admin">
-		<nav class="platform-nav" aria-label="Administrasi">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			<a href="/platform/users">Pengguna</a>
-			<a href="/platform/groups">Grup dan Akses</a>
-			<a href="/databases/connections/">Koneksi Database</a>
-		</nav>
+		@platformTopNav("groups")
 		<nav class="platform-breadcrumb" aria-label="Breadcrumb">
-			<a href="/platform/groups">Kembali ke grup</a> / <span>{ name }</span>
+			<a class="nav-back-btn" href="/platform/groups">← Kembali ke grup</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/">platform</a>
+				<span aria-hidden="true">/</span>
+				<a href="/platform/groups">groups</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">{ id } ({ name })</span>
+			</div>
 		</nav>
 		<header class="platform-header">
 			<div>

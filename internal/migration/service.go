@@ -69,6 +69,14 @@ func (s *Service) RequireCreateAccess(ctx context.Context, userID contracts.User
 	return s.authorizer.RequireDatabaseAccess(ctx, userID, dbID, contracts.ActionCreateMigration)
 }
 
+// cek apakah user adalah platform admin untuk menampilkan navigasi admin secara konsisten
+func (s *Service) IsAdmin(ctx context.Context, userID contracts.UserID) bool {
+	if s.authorizer == nil || strings.TrimSpace(string(userID)) == "" {
+		return false
+	}
+	return s.authorizer.RequirePlatformAdmin(ctx, userID) == nil
+}
+
 // buat draft migration baru (wajib punya akses view + edit)
 func (s *Service) CreateDraft(ctx context.Context, userID contracts.UserID, dbID contracts.DatabaseID, title, sqlText string) (MigrationRecord, error) {
 	if err := validateIdentity(userID, dbID); err != nil {

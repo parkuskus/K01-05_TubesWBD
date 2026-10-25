@@ -7,14 +7,29 @@ templ modulePage(title string, nav pageNavigation) {
 	<link rel="stylesheet" href="/static/database.css"/>
 	<section class="db-module">
 		<nav class="db-nav" aria-label="Navigasi database">
-			<a href="/">Beranda</a>
-			<a href="/databases/">Database</a>
-			if nav.Admin {
-				<a href="/databases/connections/">Kelola koneksi</a>
-			}
+			<a class="topnav-brand" href="/">Teras Data</a>
+			<div class="topnav-links">
+				<a href="/">Beranda</a>
+				if isConnectionsView(nav.View) {
+					<a href="/databases/">Database</a>
+				} else {
+					<a href="/databases/" aria-current="page">Database</a>
+				}
+				if nav.Admin {
+					<a href="/platform/users">Pengguna</a>
+					<a href="/platform/groups">Grup dan Akses</a>
+					if isConnectionsView(nav.View) {
+						<a href="/databases/connections/" aria-current="page">Kelola koneksi</a>
+					} else {
+						<a href="/databases/connections/">Kelola koneksi</a>
+					}
+				}
+			</div>
 		</nav>
 		if nav.Database.ID != "" {
 			@viewerNavigation(nav)
+		} else if nav.View != "" {
+			@moduleBreadcrumb(nav)
 		}
 		<h1>{ title }</h1>
 		{ children... }
@@ -33,7 +48,7 @@ templ messagePage(message string, login bool) {
 }
 
 templ connectionsPage(items []Connection, message string) {
-	@modulePage("Kelola koneksi", pageNavigation{Admin: true}) {
+	@modulePage("Kelola koneksi", pageNavigation{Admin: true, View: "connections"}) {
 		<p>Daftarkan database PostgreSQL, lalu beri akses melalui grup di administrasi platform.</p>
 		if message != "" {
 			<p class="db-notice" role="status">{ message }</p>
@@ -72,7 +87,7 @@ templ connectionsPage(items []Connection, message string) {
 }
 
 templ connectionForm(id contracts.DatabaseID, c Connection, token, message string, fields map[string]string) {
-	@modulePage("Konfigurasi koneksi", pageNavigation{Admin: true}) {
+	@modulePage("Konfigurasi koneksi", connectionFormNav(id)) {
 		if message != "" {
 			<p class="db-alert" role="alert">{ message }</p>
 		}
@@ -109,6 +124,17 @@ templ connectionForm(id contracts.DatabaseID, c Connection, token, message strin
 	}
 }
 
+func isConnectionsView(view string) bool {
+	return view == "connections" || view == "connections/new" || view == "connections/edit" || view == "connections/delete"
+}
+
+func connectionFormNav(id contracts.DatabaseID) pageNavigation {
+	if id == "" {
+		return pageNavigation{Admin: true, View: "connections/new"}
+	}
+	return pageNavigation{Admin: true, Schema: string(id), View: "connections/edit"}
+}
+
 func formAction(id contracts.DatabaseID) string {
 	if id == "" {
 		return "/databases/connections/"
@@ -117,7 +143,7 @@ func formAction(id contracts.DatabaseID) string {
 }
 
 templ deleteConfirmation(c Connection, token string) {
-	@modulePage("Hapus koneksi", pageNavigation{Admin: true}) {
+	@modulePage("Hapus koneksi", pageNavigation{Admin: true, Schema: string(c.ID), View: "connections/delete"}) {
 		<p>Hapus koneksi <strong>{ c.Name }</strong> dari platform?</p>
 		<p>Database target beserta isinya tidak dihapus. Pengguna tidak lagi dapat mengakses database melalui koneksi ini.</p>
 		<form method="post" action={ templ.URL(connectionURL(c.ID, "delete")) }>
@@ -128,7 +154,7 @@ templ deleteConfirmation(c Connection, token string) {
 }
 
 templ databasesPage(items []DatabaseChoice, admin bool) {
-	@modulePage("Database", pageNavigation{Admin: admin}) {
+	@modulePage("Database", pageNavigation{Admin: admin, View: "databases"}) {
 		<p>Pilih database untuk melihat schema, tabel, dan data. Tingkat akses menentukan apakah Anda dapat membuat migration.</p>
 		if len(items) == 0 {
 			<div class="db-empty">
@@ -234,7 +260,6 @@ templ schemasPage(nav pageNavigation, schemas []string) {
 
 templ tablesPage(nav pageNavigation, schema string, tables []Table) {
 	@modulePage("Tabel · "+schema, nav) {
-		<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>Kembali ke schema</a>
 		if len(tables) == 0 {
 			<p class="db-empty">Schema ini belum memiliki tabel atau view.</p>
 		} else {
@@ -249,7 +274,7 @@ templ tablesPage(nav pageNavigation, schema string, tables []Table) {
 
 templ tablePage(nav pageNavigation, detail TableDetails) {
 	@modulePage(detail.Schema+"."+detail.Name, nav) {
-		<div class="db-actions"><a href={ templ.URL(viewerURL(nav.Database.ID, "tables", detail.Schema, "", 0)) }>Kembali ke tabel</a><a class="db-button" href={ templ.URL(viewerURL(nav.Database.ID, "data", detail.Schema, detail.Name, 1)) }>Lihat data</a></div>
+		<div class="db-actions"><a class="db-button" href={ templ.URL(viewerURL(nav.Database.ID, "data", detail.Schema, detail.Name, 1)) }>Lihat data</a></div>
 		<h2>Kolom</h2>
 		<div class="db-scroll" tabindex="0" role="region" aria-label="Kolom tabel">
 			<table>
@@ -360,34 +385,121 @@ templ accessBadge(level contracts.AccessLevel) {
 	</span>
 }
 
-templ viewerNavigation(nav pageNavigation) {
+templ moduleBreadcrumb(nav pageNavigation) {
 	<nav class="db-breadcrumb" aria-label="Jejak navigasi">
-		<a href="/databases/">Database</a><span aria-hidden="true">/</span>
-		if nav.View == "schemas" {
-			<span aria-current="page">{ nav.Database.Name }</span>
-		} else {
-			<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>{ nav.Database.Name }</a>
-		}
-		if nav.Schema != "" {
-			<span aria-hidden="true">/</span>
-			if nav.View == "tables" {
-				<span aria-current="page">{ nav.Schema }</span>
-			} else {
-				<a href={ templ.URL(viewerURL(nav.Database.ID, "tables", nav.Schema, "", 0)) }>{ nav.Schema }</a>
-			}
-		}
-		if nav.Table != "" {
-			<span aria-hidden="true">/</span>
-			if nav.View == "table" {
-				<span aria-current="page">{ nav.Table }</span>
-			} else {
-				<a href={ templ.URL(viewerURL(nav.Database.ID, "table", nav.Schema, nav.Table, 0)) }>{ nav.Table }</a>
-				<span aria-hidden="true">/</span><span aria-current="page">Data</span>
-			}
+		if nav.View == "databases" {
+			<a class="nav-back-btn" href="/">← Kembali ke beranda</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<span aria-current="page">databases</span>
+			</div>
+		} else if nav.View == "connections" {
+			<a class="nav-back-btn" href="/databases/">← Kembali ke database</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">connections</span>
+			</div>
+		} else if nav.View == "connections/new" {
+			<a class="nav-back-btn" href="/databases/connections/">← Kembali ke koneksi</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<a href="/databases/connections/">connections</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">new</span>
+			</div>
+		} else if nav.View == "connections/edit" {
+			<a class="nav-back-btn" href="/databases/connections/">← Kembali ke koneksi</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<a href="/databases/connections/">connections</a>
+				<span aria-hidden="true">/</span>
+				<span>{ nav.Schema }</span>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">edit</span>
+			</div>
+		} else if nav.View == "connections/delete" {
+			<a class="nav-back-btn" href="/databases/connections/">← Kembali ke koneksi</a>
+			<span class="nav-path-divider" aria-hidden="true">|</span>
+			<div class="nav-path-trail">
+				<a href="/databases/">databases</a>
+				<span aria-hidden="true">/</span>
+				<a href="/databases/connections/">connections</a>
+				<span aria-hidden="true">/</span>
+				<span>{ nav.Schema }</span>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">delete</span>
+			</div>
 		}
 	</nav>
+}
+
+templ viewerNavigation(nav pageNavigation) {
+	<nav class="db-breadcrumb" aria-label="Jejak navigasi">
+		if nav.View == "schemas" {
+			<a class="nav-back-btn" href="/databases/">← Kembali ke database</a>
+		} else if nav.View == "diff" || nav.View == "tables" {
+			<a class="nav-back-btn" href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>← Kembali ke schema</a>
+		} else if nav.View == "table" {
+			<a class="nav-back-btn" href={ templ.URL(viewerURL(nav.Database.ID, "tables", nav.Schema, "", 0)) }>← Kembali ke tabel</a>
+		} else if nav.View == "data" {
+			<a class="nav-back-btn" href={ templ.URL(viewerURL(nav.Database.ID, "table", nav.Schema, nav.Table, 0)) }>← Kembali ke struktur</a>
+		} else {
+			<a class="nav-back-btn" href="/databases/">← Kembali</a>
+		}
+		<span class="nav-path-divider" aria-hidden="true">|</span>
+		<div class="nav-path-trail">
+			<a href="/databases/">databases</a>
+			<span aria-hidden="true">/</span>
+			if nav.View == "schemas" {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>{ string(nav.Database.ID) }</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">schemas</span>
+			} else if nav.View == "diff" {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>{ string(nav.Database.ID) }</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>schemas</a>
+				<span aria-hidden="true">/</span>
+				<span aria-current="page">diff</span>
+			} else {
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>{ string(nav.Database.ID) }</a>
+				<span aria-hidden="true">/</span>
+				<a href={ templ.URL(viewerURL(nav.Database.ID, "schemas", "", "", 0)) }>schemas</a>
+				if nav.Schema != "" {
+					<span aria-hidden="true">/</span>
+					if nav.View == "tables" {
+						<span>{ nav.Schema }</span>
+						<span aria-hidden="true">/</span>
+						<span aria-current="page">tables</span>
+					} else {
+						<a href={ templ.URL(viewerURL(nav.Database.ID, "tables", nav.Schema, "", 0)) }>{ nav.Schema }</a>
+						<span aria-hidden="true">/</span>
+						<a href={ templ.URL(viewerURL(nav.Database.ID, "tables", nav.Schema, "", 0)) }>tables</a>
+					}
+				}
+				if nav.Table != "" {
+					<span aria-hidden="true">/</span>
+					if nav.View == "table" {
+						<span aria-current="page">{ nav.Table }</span>
+					} else {
+						<a href={ templ.URL(viewerURL(nav.Database.ID, "table", nav.Schema, nav.Table, 0)) }>{ nav.Table }</a>
+						<span aria-hidden="true">/</span>
+						<span aria-current="page">data</span>
+					}
+				}
+			}
+		</div>
+	</nav>
 	<div class="db-context">
-		@accessBadge(nav.Database.Level)
+		<div class="db-context-info">
+			<strong class="db-context-name">{ nav.Database.Name }</strong>
+			@accessBadge(nav.Database.Level)
+		</div>
 		<div class="db-actions">
 			<a href={ templ.URL(viewerURL(nav.Database.ID, "migrations", "", "", 0)) }>Riwayat migration</a>
 			if nav.Database.Level == contracts.AccessViewEdit {
