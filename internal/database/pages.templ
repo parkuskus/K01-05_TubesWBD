@@ -179,7 +179,13 @@ templ schemaDiffPage(nav pageNavigation, schemas []string, reference, target str
 				<div class="db-scroll" tabindex="0" role="region" aria-label="Hasil perbandingan schema">
 					<table><caption>Perubahan schema</caption><thead><tr><th scope="col">Objek</th><th scope="col">Tindakan</th><th scope="col">Sebelum</th><th scope="col">Sesudah</th><th scope="col">Risiko</th></tr></thead><tbody>
 						for _, change := range diff.Changes {
-							<tr><th scope="row">{ change.Kind } · { change.Table } { change.Name }</th><td>{ change.Action }</td><td>{ change.Before }</td><td>{ change.After }</td><td>{ string(change.Risk) }</td></tr>
+							<tr><th scope="row">{ change.Kind } · { change.Table } { change.Name }</th><td>{ change.Action }</td><td>{ change.Before }</td><td>{ change.After }</td><td>
+								if change.Risk == RiskDestructive {
+									<strong class="db-alert" role="alert">Perubahan destruktif: { change.Table } { change.Name }</strong>
+								} else {
+									{ string(change.Risk) }
+								}
+							</td></tr>
 						}
 					</tbody></table>
 				</div>

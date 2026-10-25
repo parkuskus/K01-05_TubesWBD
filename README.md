@@ -2,7 +2,7 @@
 
 Fondasi aplikasi web pengelolaan database untuk Tugas Besar IF3110. Backend menggunakan Go, sedangkan halaman dirender di server. **Aplikasi ini tidak menggunakan SPA.**
 
-> Status saat ini: login/logout, administrasi pengguna dan grup, grant, koneksi target, viewer, serta migration telah terpasang pada server. Tes integrasi PostgreSQL membutuhkan tiga database khusus uji; tes yang `SKIP` tidak membuktikan fitur tersebut.
+> Status saat ini: login/logout, administrasi pengguna dan grup, grant, koneksi target, viewer, migration, serta perbandingan schema PostgreSQL telah terpasang pada server. Tes integrasi PostgreSQL membutuhkan tiga database khusus uji; tes yang `SKIP` tidak membuktikan fitur tersebut.
 
 ## Tech stack
 
@@ -126,9 +126,12 @@ Username tidak peka terhadap huruf besar-kecil; spasi di awal/akhir dihapus. Nam
 | `/platform/users`, `/platform/groups`, `/platform/groups/{id}` | Kelola pengguna, grup, anggota, dan grant (Platform Admin). |
 | `/databases/connections/`, `/new`, `/{id}/edit`, `/{id}/delete` | Kelola koneksi target (Platform Admin); penghapusan memakai halaman konfirmasi. |
 | `/databases/`, `/{id}/schemas`, `/{id}/tables`, `/{id}/table`, `/{id}/data` | Pilih database sesuai grant, lihat struktur dan data; `table`/`data` memakai parameter `schema` dan `table`, `data` memakai `page`. |
+| `GET/POST /databases/{id}/schemas/diff` | Bandingkan dua schema dalam satu database; `GET` memakai `reference` (acuan) dan `target` (tujuan), `POST` membuat draft dari diff terbaru. |
 | `/databases/{databaseID}/migrations`, `/new`, `/{version}` | Riwayat, editor, dan detail migration; POST membuat draft, mengubah draft, atau mengeksekusi setelah konfirmasi. |
 
 `View Only` boleh membaca schema, data, dan riwayat; `View + Edit` juga boleh mengelola migration. Eksekusi SQL berhasil dicatat sebagai `APPLIED`; kegagalan melakukan rollback perubahan dalam transaksi dan mencatat `FAILED`. Pemeriksaan izin selalu dilakukan di backend; menyembunyikan tombol saja bukan kontrol akses. Tidak ada editor data baris per baris atau dukungan DBMS selain PostgreSQL.
+
+Dari daftar schema, buka **Bandingkan schema**, pilih schema acuan (struktur yang diinginkan) dan schema tujuan (yang akan diubah), lalu tinjau perubahan, risiko, objek yang tidak didukung, dan kandidat SQL. Fitur ini membandingkan objek PostgreSQL yang didukung saja, bukan menjamin kedua schema identik; objek yang tidak didukung perlu ditangani manual. Operasi destruktif dapat menghapus data. Hanya pengguna `View + Edit` yang dapat membuat draft; `POST` menghitung ulang diff dan tidak menerima SQL dari browser. Buka detail draft untuk **meninjau dan mengedit SQL**, lalu konfirmasikan secara eksplisit sebelum eksekusi memakai alur migration biasa. Diff dan pembuatan draft tidak pernah menjalankan SQL. Jika draft berubah setelah ditinjau, muat ulang detail dan tinjau kembali; hak akses diperiksa ulang saat eksekusi. Migration yang sudah `APPLIED` tidak memiliki fitur rollback otomatis.
 
 Migration hanya dapat dijalankan bila **semua versi sebelumnya `APPLIED`**. Versi yang masih `DRAFT` atau berstatus `FAILED` menghalangi eksekusi berikutnya; saat ini belum ada alur untuk mengulang atau memperbaiki versi `FAILED`, sehingga jangan menjalankan migration gagal pada database yang perlu terus dimigrasikan tanpa rencana pemulihan.
 
@@ -155,6 +158,8 @@ Perubahan keanggotaan/grant yang benar-benar mengubah akses dan penghapusan grup
 ### Menyiapkan PostgreSQL khusus test
 
 Tes integrasi **membuat dan menghapus schema sementara**, termasuk `if3110_platform` pada target. Siapkan tiga database **disposable** terpisah: `platform_test`, `target_test`, dan `migration_readonly_test`. Jangan arahkan URL tes ke database pengembangan, produksi, atau database target pengguna; kedua database target tes migration harus belum memiliki schema `if3110_platform`. Jika ada beberapa instalasi PostgreSQL (misalnya Windows dan Docker), pilih host dan port yang sama saat membuat database dan menyusun URL.
+
+Tes browser untuk schema diff → draft → edit → konfirmasi → eksekusi dan riwayat berada pada `TestPostgresEndToEndWebFlow`. Jalankan dengan `go test -p 1 ./... -count=1` hanya setelah memastikan seluruh database uji disposable dan belum memiliki histori migration. Jika target sudah memiliki `if3110_platform`, tes browser sengaja dilewati; jangan hapus schema tersebut hanya untuk membuat tes lulus. Tes diff lain memakai schema acuan/tujuan sementara dengan nama acak dan menghapus hanya fixture miliknya. Catat setiap `SKIP` saat melaporkan hasil.
 
 1. Masuk ke PostgreSQL lokal dengan akun administrator (contoh Windows dengan `psql` di `PATH`):
 

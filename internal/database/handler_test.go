@@ -261,6 +261,17 @@ func TestSchemaDiffHTTPRejectsInvalidChoicesAndEmptyDiff(t *testing.T) {
 	}
 }
 
+func TestSchemaDiffDestructiveChangeWarnsBeforeDraft(t *testing.T) {
+	h, handler, _ := testHandlers(t)
+	seedViewer(t, h)
+	h.drafts = &capturedDraft{}
+	h.viewer = stubViewer{diff: SchemaDiff{Changes: []SchemaChange{{Kind: "column", Action: "drop", Name: "secret", Table: "items", Risk: RiskDestructive}}, SQL: `ALTER TABLE "live"."items" DROP COLUMN "secret";`}}
+	w := requestPage(handler, "/databases/1/schemas/diff?reference=desired&target=live", "editor")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `role="alert"`) || !strings.Contains(w.Body.String(), "Perubahan destruktif") || !strings.Contains(w.Body.String(), "secret") {
+		t.Fatalf("destructive diff lacks specific warning: status=%d", w.Code)
+	}
+}
+
 func TestViewerEmptyPagesKeepRecoveryNavigation(t *testing.T) {
 	h, handler, _ := testHandlers(t)
 	seedViewer(t, h)
