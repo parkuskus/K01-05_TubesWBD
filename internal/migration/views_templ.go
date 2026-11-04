@@ -1004,7 +1004,7 @@ func detailContent(data DetailPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.Record.Status == StatusDraft && data.CanEdit {
+		if data.Record.Status != StatusApplied && data.CanEdit {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<section class=\"migration-draft-controls\"><h2>Ubah Draft SQL</h2><form class=\"migration-editor-form\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

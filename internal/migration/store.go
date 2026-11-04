@@ -149,7 +149,7 @@ func (s *PostgresStore) UpdateDraft(ctx context.Context, version int64, title, s
 	if err != nil {
 		return MigrationRecord{}, err
 	}
-	if Status(currentStatus) != StatusDraft {
+	if Status(currentStatus) == StatusApplied {
 		return MigrationRecord{}, ErrMigrationAlreadyApplied
 	}
 
@@ -290,7 +290,7 @@ func (s *PostgresStore) ExecuteDraft(ctx context.Context, version int64, execute
 	if err != nil {
 		return MigrationRecord{}, err
 	}
-	if record.Status != StatusDraft {
+	if record.Status == StatusApplied {
 		return MigrationRecord{}, ErrMigrationAlreadyApplied
 	}
 	if reviewed == "" || reviewed != reviewedDraft(record) {
@@ -409,7 +409,7 @@ func (s *PostgresStore) markDraftFailed(ctx context.Context, version int64, exec
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE if3110_platform.migration_history
 		SET status = $2, executed_by = $3, error_message = $4, updated_at = $5, executed_at = $5
-		WHERE version = $1 AND status = 'DRAFT'
+		WHERE version = $1 AND status <> 'APPLIED'
 		RETURNING id, version, title, sql_text, status, created_by, executed_by, error_message, created_at, updated_at, executed_at`,
 		version, string(StatusFailed), string(executedBy), errMsg, now,
 	)

@@ -99,7 +99,7 @@ func (f *fakeMigrationService) UpdateDraft(ctx context.Context, userID contracts
 	list := f.records[dbID]
 	for i := range list {
 		if list[i].Version == version {
-			if list[i].Status != StatusDraft {
+			if list[i].Status == StatusApplied {
 				return MigrationRecord{}, ErrMigrationAlreadyApplied
 			}
 			list[i].Title = normalizeTitle(title)
@@ -119,7 +119,7 @@ func (f *fakeMigrationService) ExecuteMigration(ctx context.Context, userID cont
 	list := f.records[dbID]
 	for i := range list {
 		if list[i].Version == version {
-			if list[i].Status != StatusDraft {
+			if list[i].Status == StatusApplied {
 				return MigrationRecord{}, ErrMigrationAlreadyApplied
 			}
 			if reviewed == "" || reviewed != reviewedDraft(list[i]) {
