@@ -278,7 +278,7 @@ templ detailContent(data DetailPageData) {
 			<h2>SQL Migration</h2>
 			<pre class="migration-sql-preview"><code>{ data.Record.SQLText }</code></pre>
 		</section>
-		if data.Record.Status == StatusDraft && data.CanEdit {
+		if data.Record.Status != StatusApplied && data.CanEdit {
 			<section class="migration-draft-controls">
 				<h2>Ubah Draft SQL</h2>
 				<form class="migration-editor-form" action={ templ.URL(editMigrationURL(data.DatabaseID, data.Record.Version)) } method="post">
