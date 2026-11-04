@@ -4,22 +4,31 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port                  string
-	Environment           string
-	PlatformDatabaseURL   string
-	CSRFKey               []byte
-	DatabaseCredentialKey []byte
-	InitialAdminUsername  string
-	InitialAdminPassword  string
-	SecureCookies         bool
+	Port                   string
+	Environment            string
+	PlatformDatabaseURL    string
+	CSRFKey                []byte
+	DatabaseCredentialKey  []byte
+	InitialAdminUsername   string
+	InitialAdminPassword   string
+	SecureCookies          bool
+	WorkerID               string
+	WorkerConcurrency      int
+	WorkerPollInterval     time.Duration
+	JobLeaseDuration       time.Duration
+	JobHeartbeatInterval   time.Duration
+	JobMaxRetries          int
+	TargetExecutionTimeout time.Duration
 }
 
 func Load() (Config, error) {
@@ -27,6 +36,24 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return parseConfig(os.LookupEnv)
+}
+
+// LoadPlatformDatabaseURL loads .env if present and returns PLATFORM_DATABASE_URL
+// for standalone schema migration commands such as cmd/migrate.
+func LoadPlatformDatabaseURL() (string, error) {
+	if err := loadEnvFile(".env"); err != nil {
+		return "", err
+	}
+	return parsePlatformDatabaseURL(os.LookupEnv)
+}
+
+func parsePlatformDatabaseURL(lookup func(string) (string, bool)) (string, error) {
+	raw, _ := lookup("PLATFORM_DATABASE_URL")
+	dsn := strings.TrimSpace(raw)
+	if dsn == "" {
+		return "", errors.New("PLATFORM_DATABASE_URL is required")
+	}
+	return dsn, nil
 }
 
 func loadEnvFile(path string) error {
@@ -40,6 +67,15 @@ func loadEnvFile(path string) error {
 	return nil
 }
 
+func defaultWorkerID() string {
+	host, err := os.Hostname()
+	host = strings.TrimSpace(host)
+	if err != nil || host == "" {
+		host = "worker"
+	}
+	return fmt.Sprintf("%s-%d", host, os.Getpid())
+}
+
 func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	getRaw := func(key string) string {
 		value, _ := lookup(key)
@@ -50,11 +86,18 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	}
 
 	config := Config{
-		Port:                 get("PORT"),
-		Environment:          strings.ToLower(get("APP_ENV")),
-		PlatformDatabaseURL:  get("PLATFORM_DATABASE_URL"),
-		InitialAdminUsername: get("INITIAL_ADMIN_USERNAME"),
-		InitialAdminPassword: getRaw("INITIAL_ADMIN_PASSWORD"),
+		Port:                   get("PORT"),
+		Environment:            strings.ToLower(get("APP_ENV")),
+		PlatformDatabaseURL:    get("PLATFORM_DATABASE_URL"),
+		InitialAdminUsername:   get("INITIAL_ADMIN_USERNAME"),
+		InitialAdminPassword:   getRaw("INITIAL_ADMIN_PASSWORD"),
+		WorkerID:               get("WORKER_ID"),
+		WorkerConcurrency:      2,
+		WorkerPollInterval:     time.Second,
+		JobLeaseDuration:       30 * time.Second,
+		JobHeartbeatInterval:   10 * time.Second,
+		JobMaxRetries:          3,
+		TargetExecutionTimeout: 10 * time.Minute,
 	}
 	if config.Port == "" {
 		config.Port = "8080"
@@ -90,5 +133,55 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	if config.Environment == "production" && !config.SecureCookies {
 		return Config{}, errors.New("SECURE_COOKIES must be true in production")
 	}
+
+	if config.WorkerID == "" {
+		config.WorkerID = defaultWorkerID()
+	}
+	if rawConcurrency := get("WORKER_CONCURRENCY"); rawConcurrency != "" {
+		concurrency, err := strconv.Atoi(rawConcurrency)
+		if err != nil || concurrency < 1 {
+			return Config{}, errors.New("WORKER_CONCURRENCY must be a positive integer")
+		}
+		config.WorkerConcurrency = concurrency
+	}
+	if rawPoll := get("WORKER_POLL_INTERVAL"); rawPoll != "" {
+		poll, err := time.ParseDuration(rawPoll)
+		if err != nil || poll <= 0 {
+			return Config{}, errors.New("WORKER_POLL_INTERVAL must be a positive duration")
+		}
+		config.WorkerPollInterval = poll
+	}
+	if rawLease := get("JOB_LEASE_DURATION"); rawLease != "" {
+		lease, err := time.ParseDuration(rawLease)
+		if err != nil || lease <= 0 {
+			return Config{}, errors.New("JOB_LEASE_DURATION must be a positive duration")
+		}
+		config.JobLeaseDuration = lease
+	}
+	if rawHeartbeat := get("JOB_HEARTBEAT_INTERVAL"); rawHeartbeat != "" {
+		heartbeat, err := time.ParseDuration(rawHeartbeat)
+		if err != nil || heartbeat <= 0 {
+			return Config{}, errors.New("JOB_HEARTBEAT_INTERVAL must be a positive duration")
+		}
+		config.JobHeartbeatInterval = heartbeat
+	}
+	if config.JobHeartbeatInterval >= config.JobLeaseDuration {
+		return Config{}, errors.New("JOB_HEARTBEAT_INTERVAL must be less than JOB_LEASE_DURATION")
+	}
+	if rawMaxRetries := get("JOB_MAX_RETRIES"); rawMaxRetries != "" {
+		maxRetries, err := strconv.Atoi(rawMaxRetries)
+		if err != nil || maxRetries < 0 {
+			return Config{}, errors.New("JOB_MAX_RETRIES must be a non-negative integer")
+		}
+		config.JobMaxRetries = maxRetries
+	}
+	if rawExecTimeout := get("TARGET_EXECUTION_TIMEOUT"); rawExecTimeout != "" {
+		execTimeout, err := time.ParseDuration(rawExecTimeout)
+		if err != nil || execTimeout <= 0 {
+			return Config{}, errors.New("TARGET_EXECUTION_TIMEOUT must be a positive duration")
+		}
+		config.TargetExecutionTimeout = execTimeout
+	}
+
 	return config, nil
 }
