@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -19,8 +20,10 @@ import (
 )
 
 type fakeJobsDB struct {
-	mu   sync.Mutex
-	rows []fakeJobRecord
+	mu       sync.Mutex
+	rows     []fakeJobRecord
+	attempts []fakeAttemptRecord
+	gates    map[string]string
 }
 
 type fakeJobRecord struct {
@@ -54,6 +57,20 @@ type fakeJobRecord struct {
 	completedAt         any
 }
 
+type fakeAttemptRecord struct {
+	id           string
+	jobID        string
+	executionID  string
+	attemptNo    int64
+	workerID     string
+	status       string
+	executedSQL  string
+	errorCode    string
+	errorMessage string
+	startedAt    time.Time
+	finishedAt   any
+}
+
 type fakeJobsConnector struct {
 	db *fakeJobsDB
 }
@@ -69,9 +86,10 @@ type fakeJobsDriver struct{}
 func (fakeJobsDriver) Open(string) (driver.Conn, error) { return nil, errors.New("unused") }
 
 type fakeJobsConn struct {
-	db     *fakeJobsDB
-	inTx   bool
-	staged []fakeJobRecord
+	db             *fakeJobsDB
+	inTx           bool
+	staged         []fakeJobRecord
+	stagedAttempts []fakeAttemptRecord
 }
 
 func (c *fakeJobsConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unused") }
@@ -81,6 +99,7 @@ func (c *fakeJobsConn) Begin() (driver.Tx, error) {
 	c.db.mu.Lock()
 	c.inTx = true
 	c.staged = append([]fakeJobRecord(nil), c.db.rows...)
+	c.stagedAttempts = append([]fakeAttemptRecord(nil), c.db.attempts...)
 	return &fakeJobsTx{conn: c}, nil
 }
 
@@ -91,7 +110,9 @@ type fakeJobsTx struct {
 func (tx *fakeJobsTx) Commit() error {
 	if tx.conn.inTx {
 		tx.conn.db.rows = tx.conn.staged
+		tx.conn.db.attempts = tx.conn.stagedAttempts
 		tx.conn.staged = nil
+		tx.conn.stagedAttempts = nil
 		tx.conn.inTx = false
 		tx.conn.db.mu.Unlock()
 	}
@@ -101,23 +122,282 @@ func (tx *fakeJobsTx) Commit() error {
 func (tx *fakeJobsTx) Rollback() error {
 	if tx.conn.inTx {
 		tx.conn.staged = nil
+		tx.conn.stagedAttempts = nil
 		tx.conn.inTx = false
 		tx.conn.db.mu.Unlock()
 	}
 	return nil
 }
 
-func (c *fakeJobsConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+func (c *fakeJobsConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	trimmed := strings.TrimSpace(query)
-	if strings.HasPrefix(trimmed, "SELECT pg_advisory_xact_lock") {
+	switch {
+	case strings.HasPrefix(trimmed, "SELECT pg_advisory_xact_lock"):
 		return driver.RowsAffected(1), nil
+
+	case strings.HasPrefix(trimmed, "UPDATE job_attempts") && strings.Contains(trimmed, "LEASE_EXPIRED"):
+		newStatus := args[0].Value.(string)
+		finishedAt := args[1].Value.(time.Time)
+		jobID := args[2].Value.(string)
+		oldStatus := args[3].Value.(string)
+		var affected int64
+		for i := range c.stagedAttempts {
+			if c.stagedAttempts[i].jobID == jobID && c.stagedAttempts[i].status == oldStatus {
+				c.stagedAttempts[i].status = newStatus
+				if c.stagedAttempts[i].errorCode == "" {
+					c.stagedAttempts[i].errorCode = "LEASE_EXPIRED"
+				}
+				if c.stagedAttempts[i].errorMessage == "" {
+					c.stagedAttempts[i].errorMessage = "worker lease expired before attempt completion"
+				}
+				c.stagedAttempts[i].finishedAt = finishedAt
+				affected++
+			}
+		}
+		return driver.RowsAffected(affected), nil
+
+	case strings.HasPrefix(trimmed, "UPDATE jobs") && strings.Contains(trimmed, "SET committed_batches = $1"):
+		committedBatches := args[0].Value.(int64)
+		committedRows := args[1].Value.(int64)
+		totalScopeRows := args[2].Value.(int64)
+		lastCursor := args[3].Value.(string)
+		now := args[4].Value.(time.Time)
+		jobID := args[5].Value.(string)
+		leaseToken := args[6].Value.(string)
+		expectedStatus := args[7].Value.(string)
+
+		c.db.mu.Lock()
+		defer c.db.mu.Unlock()
+		for i := range c.db.rows {
+			if c.db.rows[i].id == jobID && c.db.rows[i].leaseToken == leaseToken && c.db.rows[i].status == expectedStatus {
+				c.db.rows[i].committedBatches = committedBatches
+				c.db.rows[i].committedRows = committedRows
+				c.db.rows[i].totalScopeRows = totalScopeRows
+				c.db.rows[i].lastCommittedCursor = lastCursor
+				c.db.rows[i].updatedAt = now
+				return driver.RowsAffected(1), nil
+			}
+		}
+		return driver.RowsAffected(0), nil
+
+	default:
+		return nil, fmt.Errorf("unexpected ExecContext query: %s", trimmed)
 	}
-	return nil, fmt.Errorf("unexpected ExecContext query: %s", trimmed)
 }
 
 func (c *fakeJobsConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	trimmed := strings.TrimSpace(query)
 	switch {
+	case strings.HasPrefix(trimmed, "SELECT to_regclass('database_execution_gates')"):
+		if len(c.db.gates) > 0 {
+			return &fakeSingleValRows{col: "to_regclass", val: "database_execution_gates"}, nil
+		}
+		return &fakeSingleValRows{col: "to_regclass", val: nil}, nil
+
+	case strings.Contains(trimmed, "FROM jobs j") && strings.Contains(trimmed, "FOR UPDATE SKIP LOCKED"):
+		now := args[0].Value.(time.Time)
+		activeDBs := make(map[string]bool)
+		for _, r := range c.staged {
+			if r.status == string(contracts.JobStatusRunning) {
+				if exp, ok := r.leaseExpiresAt.(time.Time); ok && !exp.Before(now) {
+					activeDBs[r.databaseID] = true
+				}
+			}
+		}
+
+		var candidates []fakeJobRecord
+		for _, r := range c.staged {
+			duePending := (r.status == string(contracts.JobStatusPending) || r.status == string(contracts.JobStatusRetryWait)) && !r.availableAt.After(now)
+			expiredRunning := false
+			if r.status == string(contracts.JobStatusRunning) && r.retryCount < r.maxRetries {
+				if exp, ok := r.leaseExpiresAt.(time.Time); ok && exp.Before(now) {
+					expiredRunning = true
+				}
+			}
+			if !duePending && !expiredRunning {
+				continue
+			}
+			if activeDBs[r.databaseID] {
+				continue
+			}
+			if reason, gated := c.db.gates[r.databaseID]; gated {
+				isRecovery := (r.direction == string(contracts.DirectionResume) || r.direction == string(contracts.DirectionCompensate)) &&
+					(reason == string(contracts.GateReasonPartial) || reason == string(contracts.GateReasonPartiallyReverted))
+				if !isRecovery {
+					continue
+				}
+			}
+			candidates = append(candidates, r)
+		}
+
+		sort.Slice(candidates, func(i, j int) bool {
+			if !candidates[i].availableAt.Equal(candidates[j].availableAt) {
+				return candidates[i].availableAt.Before(candidates[j].availableAt)
+			}
+			return candidates[i].createdAt.Before(candidates[j].createdAt)
+		})
+		if len(candidates) > 1 {
+			candidates = candidates[:1]
+		}
+		return &fakeJobRows{records: candidates}, nil
+
+	case strings.HasPrefix(trimmed, "SELECT COALESCE(MAX(attempt_no), 0) FROM job_attempts"):
+		jobID := args[0].Value.(string)
+		var maxNo int64
+		for _, a := range c.stagedAttempts {
+			if a.jobID == jobID && a.attemptNo > maxNo {
+				maxNo = a.attemptNo
+			}
+		}
+		return &fakeSingleValRows{col: "coalesce", val: maxNo}, nil
+
+	case strings.HasPrefix(trimmed, "UPDATE jobs") && strings.Contains(trimmed, "SET status = $1") && strings.Contains(trimmed, "lease_owner = $2"):
+		status := args[0].Value.(string)
+		leaseOwner := args[1].Value.(string)
+		leaseToken := args[2].Value.(string)
+		leaseExpiresAt := args[3].Value.(time.Time)
+		retryCount := args[4].Value.(int64)
+		now := args[5].Value.(time.Time)
+		jobID := args[6].Value.(string)
+
+		for i := range c.staged {
+			if c.staged[i].id == jobID {
+				c.staged[i].status = status
+				c.staged[i].leaseOwner = leaseOwner
+				c.staged[i].leaseToken = leaseToken
+				c.staged[i].leaseExpiresAt = leaseExpiresAt
+				c.staged[i].retryCount = retryCount
+				c.staged[i].updatedAt = now
+				return &fakeJobRows{records: []fakeJobRecord{c.staged[i]}}, nil
+			}
+		}
+		return &fakeJobRows{}, nil
+
+	case strings.HasPrefix(trimmed, "INSERT INTO job_attempts"):
+		rec := fakeAttemptRecord{
+			id:          args[0].Value.(string),
+			jobID:       args[1].Value.(string),
+			executionID: args[2].Value.(string),
+			attemptNo:   args[3].Value.(int64),
+			workerID:    args[4].Value.(string),
+			status:      args[5].Value.(string),
+			startedAt:   args[6].Value.(time.Time),
+		}
+		c.stagedAttempts = append(c.stagedAttempts, rec)
+		return &fakeAttemptRows{records: []fakeAttemptRecord{rec}}, nil
+
+	case strings.HasPrefix(trimmed, "UPDATE jobs") && strings.Contains(trimmed, "RETURNING lease_expires_at"):
+		newExpiry := args[0].Value.(time.Time)
+		now := args[1].Value.(time.Time)
+		jobID := args[2].Value.(string)
+		leaseToken := args[3].Value.(string)
+		expectedStatus := args[4].Value.(string)
+
+		c.db.mu.Lock()
+		defer c.db.mu.Unlock()
+		for i := range c.db.rows {
+			if c.db.rows[i].id == jobID && c.db.rows[i].leaseToken == leaseToken && c.db.rows[i].status == expectedStatus {
+				c.db.rows[i].leaseExpiresAt = newExpiry
+				c.db.rows[i].updatedAt = now
+				return &fakeSingleValRows{col: "lease_expires_at", val: newExpiry}, nil
+			}
+		}
+		return &fakeSingleValRows{empty: true}, nil
+
+	case strings.Contains(trimmed, "FROM jobs WHERE id = $1 AND lease_token = $2 AND status = $3 FOR UPDATE"):
+		jobID := args[0].Value.(string)
+		leaseToken := args[1].Value.(string)
+		status := args[2].Value.(string)
+		for _, r := range c.staged {
+			if r.id == jobID && r.leaseToken == leaseToken && r.status == status {
+				return &fakeJobRows{records: []fakeJobRecord{r}}, nil
+			}
+		}
+		return &fakeJobRows{}, nil
+
+	case strings.HasPrefix(trimmed, "UPDATE jobs") && strings.Contains(trimmed, "committed_batches = $2"):
+		status := args[0].Value.(string)
+		committedBatches := args[1].Value.(int64)
+		committedRows := args[2].Value.(int64)
+		totalScopeRows := args[3].Value.(int64)
+		lastCursor := args[4].Value.(string)
+		errCode := args[5].Value.(string)
+		errMsg := args[6].Value.(string)
+		now := args[7].Value.(time.Time)
+		completedAt := args[8].Value
+		jobID := args[9].Value.(string)
+		leaseToken := args[10].Value.(string)
+		expectedStatus := args[11].Value.(string)
+
+		for i := range c.staged {
+			if c.staged[i].id == jobID && c.staged[i].leaseToken == leaseToken && c.staged[i].status == expectedStatus {
+				c.staged[i].status = status
+				c.staged[i].leaseOwner = ""
+				c.staged[i].leaseToken = ""
+				c.staged[i].leaseExpiresAt = nil
+				c.staged[i].committedBatches = committedBatches
+				c.staged[i].committedRows = committedRows
+				c.staged[i].totalScopeRows = totalScopeRows
+				c.staged[i].lastCommittedCursor = lastCursor
+				c.staged[i].lastErrorCode = errCode
+				c.staged[i].lastErrorMessage = errMsg
+				c.staged[i].updatedAt = now
+				c.staged[i].completedAt = completedAt
+				return &fakeJobRows{records: []fakeJobRecord{c.staged[i]}}, nil
+			}
+		}
+		return &fakeJobRows{}, nil
+
+	case strings.HasPrefix(trimmed, "UPDATE jobs") && strings.Contains(trimmed, "retry_count = $2"):
+		status := args[0].Value.(string)
+		retryCount := args[1].Value.(int64)
+		availableAt := args[2].Value.(time.Time)
+		errCode := args[3].Value.(string)
+		errMsg := args[4].Value.(string)
+		now := args[5].Value.(time.Time)
+		completedAt := args[6].Value
+		jobID := args[7].Value.(string)
+		leaseToken := args[8].Value.(string)
+		expectedStatus := args[9].Value.(string)
+
+		for i := range c.staged {
+			if c.staged[i].id == jobID && c.staged[i].leaseToken == leaseToken && c.staged[i].status == expectedStatus {
+				c.staged[i].status = status
+				c.staged[i].leaseOwner = ""
+				c.staged[i].leaseToken = ""
+				c.staged[i].leaseExpiresAt = nil
+				c.staged[i].retryCount = retryCount
+				c.staged[i].availableAt = availableAt
+				c.staged[i].lastErrorCode = errCode
+				c.staged[i].lastErrorMessage = errMsg
+				c.staged[i].updatedAt = now
+				c.staged[i].completedAt = completedAt
+				return &fakeJobRows{records: []fakeJobRecord{c.staged[i]}}, nil
+			}
+		}
+		return &fakeJobRows{}, nil
+
+	case strings.HasPrefix(trimmed, "UPDATE job_attempts") && strings.Contains(trimmed, "WHERE id = $6"):
+		status := args[0].Value.(string)
+		executedSQL := args[1].Value.(string)
+		errCode := args[2].Value.(string)
+		errMsg := args[3].Value.(string)
+		finishedAt := args[4].Value.(time.Time)
+		attemptID := args[5].Value.(string)
+		jobID := args[6].Value.(string)
+
+		for i := range c.stagedAttempts {
+			if c.stagedAttempts[i].id == attemptID && c.stagedAttempts[i].jobID == jobID {
+				c.stagedAttempts[i].status = status
+				c.stagedAttempts[i].executedSQL = executedSQL
+				c.stagedAttempts[i].errorCode = errCode
+				c.stagedAttempts[i].errorMessage = errMsg
+				c.stagedAttempts[i].finishedAt = finishedAt
+				return &fakeAttemptRows{records: []fakeAttemptRecord{c.stagedAttempts[i]}}, nil
+			}
+		}
+		return &fakeAttemptRows{}, nil
+
 	case strings.Contains(trimmed, "FROM jobs") && strings.Contains(trimmed, "FOR UPDATE"):
 		actorID := args[0].Value.(string)
 		databaseID := args[1].Value.(string)
@@ -176,6 +456,58 @@ func (c *fakeJobsConn) QueryContext(_ context.Context, query string, args []driv
 	default:
 		return nil, fmt.Errorf("unexpected QueryContext query: %s", trimmed)
 	}
+}
+
+type fakeSingleValRows struct {
+	col   string
+	val   any
+	empty bool
+	done  bool
+}
+
+func (r *fakeSingleValRows) Columns() []string { return []string{r.col} }
+func (r *fakeSingleValRows) Close() error      { return nil }
+func (r *fakeSingleValRows) Next(dest []driver.Value) error {
+	if r.empty || r.done {
+		return io.EOF
+	}
+	r.done = true
+	dest[0] = r.val
+	return nil
+}
+
+type fakeAttemptRows struct {
+	records []fakeAttemptRecord
+	idx     int
+}
+
+func (*fakeAttemptRows) Columns() []string {
+	return []string{
+		"id", "job_id", "execution_id", "attempt_no", "worker_id",
+		"status", "executed_sql", "error_code", "error_message", "started_at", "finished_at",
+	}
+}
+
+func (*fakeAttemptRows) Close() error { return nil }
+
+func (r *fakeAttemptRows) Next(dest []driver.Value) error {
+	if r.idx >= len(r.records) {
+		return io.EOF
+	}
+	rec := r.records[r.idx]
+	r.idx++
+	dest[0] = rec.id
+	dest[1] = rec.jobID
+	dest[2] = rec.executionID
+	dest[3] = rec.attemptNo
+	dest[4] = rec.workerID
+	dest[5] = rec.status
+	dest[6] = rec.executedSQL
+	dest[7] = rec.errorCode
+	dest[8] = rec.errorMessage
+	dest[9] = rec.startedAt
+	dest[10] = rec.finishedAt
+	return nil
 }
 
 type fakeJobRows struct {
@@ -444,4 +776,3 @@ func TestPublishIntegrationPostgres(t *testing.T) {
 		t.Fatalf("expected ErrIdempotencyConflict, got %v", err)
 	}
 }
-
