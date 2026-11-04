@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseConfigRequiresPlatformDatabaseCSRFAndCredentialKeys(t *testing.T) {
@@ -127,5 +128,83 @@ func TestLoadEnvFileDoesNotOverrideProcessEnvironment(t *testing.T) {
 	}
 	if got := os.Getenv(fileKey); got != "loaded-from-file" {
 		t.Fatalf("file environment value = %q, want loaded-from-file", got)
+	}
+}
+
+func TestParseConfigWorkerDefaultsAndOverrides(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_DATABASE_URL":   "postgres://localhost/platform_dev",
+		"CSRF_AUTH_KEY":           strings.Repeat("ab", 32),
+		"DATABASE_CREDENTIAL_KEY": strings.Repeat("cd", 32),
+	}
+	cfg, err := parseConfig(func(key string) (string, bool) {
+		val, ok := base[key]
+		return val, ok
+	})
+	if err != nil {
+		t.Fatalf("parseConfig() default worker settings error = %v", err)
+	}
+	if cfg.WorkerID == "" ||
+		cfg.WorkerConcurrency != 2 ||
+		cfg.WorkerPollInterval != time.Second ||
+		cfg.JobLeaseDuration != 30*time.Second ||
+		cfg.JobHeartbeatInterval != 10*time.Second ||
+		cfg.JobMaxRetries != 3 ||
+		cfg.TargetExecutionTimeout != 10*time.Minute {
+		t.Fatalf("unexpected default worker config: %+v", cfg)
+	}
+
+	overrides := map[string]string{
+		"PLATFORM_DATABASE_URL":    "postgres://localhost/platform_dev",
+		"CSRF_AUTH_KEY":            strings.Repeat("ab", 32),
+		"DATABASE_CREDENTIAL_KEY":  strings.Repeat("cd", 32),
+		"WORKER_ID":                "worker-alpha-1",
+		"WORKER_CONCURRENCY":       "4",
+		"WORKER_POLL_INTERVAL":     "500ms",
+		"JOB_LEASE_DURATION":       "45s",
+		"JOB_HEARTBEAT_INTERVAL":   "15s",
+		"JOB_MAX_RETRIES":          "5",
+		"TARGET_EXECUTION_TIMEOUT": "25m",
+	}
+	cfg, err = parseConfig(func(key string) (string, bool) {
+		val, ok := overrides[key]
+		return val, ok
+	})
+	if err != nil {
+		t.Fatalf("parseConfig() custom worker settings error = %v", err)
+	}
+	if cfg.WorkerID != "worker-alpha-1" ||
+		cfg.WorkerConcurrency != 4 ||
+		cfg.WorkerPollInterval != 500*time.Millisecond ||
+		cfg.JobLeaseDuration != 45*time.Second ||
+		cfg.JobHeartbeatInterval != 15*time.Second ||
+		cfg.JobMaxRetries != 5 ||
+		cfg.TargetExecutionTimeout != 25*time.Minute {
+		t.Fatalf("unexpected overridden worker config: %+v", cfg)
+	}
+
+	invalidCases := []map[string]string{
+		{"WORKER_CONCURRENCY": "0"},
+		{"WORKER_CONCURRENCY": "-1"},
+		{"WORKER_POLL_INTERVAL": "0s"},
+		{"JOB_LEASE_DURATION": "0s"},
+		{"JOB_HEARTBEAT_INTERVAL": "30s"}, // equal to default 30s lease
+		{"JOB_MAX_RETRIES": "-1"},
+		{"TARGET_EXECUTION_TIMEOUT": "0s"},
+	}
+	for _, tc := range invalidCases {
+		env := make(map[string]string, len(base)+len(tc))
+		for k, v := range base {
+			env[k] = v
+		}
+		for k, v := range tc {
+			env[k] = v
+		}
+		if _, err := parseConfig(func(key string) (string, bool) {
+			val, ok := env[key]
+			return val, ok
+		}); err == nil {
+			t.Fatalf("expected invalid worker setting %v to fail validation", tc)
+		}
 	}
 }
