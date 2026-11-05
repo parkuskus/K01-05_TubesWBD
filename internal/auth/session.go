@@ -134,14 +134,24 @@ func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request, proof Lo
 
 // RequireSession protects a handler and exposes the authenticated user through CurrentUser.
 func (m *SessionManager) RequireSession(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reject := func() {
-			m.clearCookie(w)
+	return m.RequireSessionWithError(next, func(w http.ResponseWriter, r *http.Request, err error) {
+		if errors.Is(err, ErrUnauthenticated) {
 			if r.Method == http.MethodGet && r.URL.Path == "/" {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, "session service unavailable", http.StatusServiceUnavailable)
+	})
+}
+
+func (m *SessionManager) RequireSessionWithError(next http.Handler, onError func(http.ResponseWriter, *http.Request, error)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reject := func() {
+			m.clearCookie(w)
+			onError(w, r, ErrUnauthenticated)
 		}
 		cookie, err := r.Cookie(m.config.CookieName)
 		if err != nil {
@@ -160,14 +170,14 @@ func (m *SessionManager) RequireSession(next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
-			http.Error(w, "session service unavailable", http.StatusServiceUnavailable)
+			onError(w, r, err)
 			return
 		}
 
 		if record.TokenIsAlias || now.Sub(record.RotatedAt) >= m.config.RotationInterval {
 			token, newHash, err := m.newToken()
 			if err != nil {
-				http.Error(w, "session service unavailable", http.StatusServiceUnavailable)
+				onError(w, r, err)
 				return
 			}
 			record, err = m.store.Rotate(r.Context(), record.ID, presentedHash[:], newHash[:], now, m.config.IdleTimeout, m.config.GracePeriod)
@@ -176,7 +186,7 @@ func (m *SessionManager) RequireSession(next http.Handler) http.Handler {
 				return
 			}
 			if err != nil {
-				http.Error(w, "session service unavailable", http.StatusServiceUnavailable)
+				onError(w, r, err)
 				return
 			}
 			m.setCookie(w, token, now, record.AbsoluteExpiresAt)

@@ -24,6 +24,12 @@ type userRecord struct {
 	IsPlatformAdmin bool
 }
 
+type Identity struct {
+	ID              contracts.UserID
+	Username        string
+	IsPlatformAdmin bool
+}
+
 // LoginProof is valid only while the account's credentials and admin status remain unchanged.
 // Its credential snapshot stays inside the auth package.
 type LoginProof struct {
@@ -34,6 +40,7 @@ type LoginProof struct {
 
 type userStore interface {
 	FindByUsername(ctx context.Context, username string) (userRecord, error)
+	FindIdentity(ctx context.Context, id contracts.UserID) (Identity, error)
 	EnsureInitialAdmin(ctx context.Context, username, passwordHash string) error
 }
 
@@ -47,6 +54,23 @@ type postgresUserStore struct {
 
 func NewAuthenticator(db *sql.DB) *Authenticator {
 	return &Authenticator{store: &postgresUserStore{db: db}}
+}
+
+func (a *Authenticator) Identity(ctx context.Context, id contracts.UserID) (Identity, error) {
+	if id == "" {
+		return Identity{}, ErrUnauthenticated
+	}
+	return a.store.FindIdentity(ctx, id)
+}
+
+func (s *postgresUserStore) FindIdentity(ctx context.Context, id contracts.UserID) (Identity, error) {
+	var identity Identity
+	err := s.db.QueryRowContext(ctx, `SELECT id::text, username, is_platform_admin FROM users WHERE id::text = $1`, id).
+		Scan(&identity.ID, &identity.Username, &identity.IsPlatformAdmin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Identity{}, ErrUnauthenticated
+	}
+	return identity, err
 }
 
 func (a *Authenticator) Authenticate(ctx context.Context, username, password string) (contracts.UserID, error) {
