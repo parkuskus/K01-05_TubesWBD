@@ -3,7 +3,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Activity, ChevronRight, Database, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/workspace-provider";
@@ -13,6 +13,7 @@ const navigation = [
   { label: "Database", href: "/", icon: Database },
   { label: "Aktivitas", href: "/activity", icon: Activity },
 ];
+const desktopMediaQuery = "(min-width: 64rem)";
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
@@ -72,6 +73,17 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const desktop = window.matchMedia(desktopMediaQuery);
+    const closeOnDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) setMenuOpen(false);
+    };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
+
   return (
     <div className="min-h-dvh bg-surface">
       <a
@@ -98,7 +110,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             </DialogPrimitive.Trigger>
             <DialogPrimitive.Portal>
               <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-ink/35 lg:hidden" />
-              <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(20rem,90vw)] overflow-y-auto bg-ground lg:hidden">
+              <DialogPrimitive.Content
+                className="fixed inset-y-0 left-0 z-50 w-[min(20rem,90vw)] overflow-y-auto bg-ground lg:hidden"
+                onCloseAutoFocus={(event) => {
+                  if (window.matchMedia(desktopMediaQuery).matches) {
+                    event.preventDefault();
+                    mainRef.current?.focus();
+                  }
+                }}
+              >
                 <DialogPrimitive.Title className="sr-only">
                   Navigasi Teras Data
                 </DialogPrimitive.Title>
@@ -122,6 +142,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </span>
         </header>
         <main
+          ref={mainRef}
           id="main-content"
           tabIndex={-1}
           className="mx-auto max-w-[1360px] px-4 py-8 outline-none sm:px-8 sm:py-10 lg:px-10 xl:px-14"

@@ -63,6 +63,52 @@ describe("API transport foundation", () => {
     });
   });
 
+  it("preserves field validation errors alongside the API error metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            error: {
+              code: "VALIDATION_FAILED",
+              message: "Periksa isian koneksi.",
+              field_errors: { password: "Isi password PostgreSQL untuk koneksi baru." },
+            },
+            request_id: "validation-request",
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const api = createApiClient();
+    api.setCsrfToken("example-csrf");
+    await expect(api.request("/connections", { method: "POST" })).rejects.toMatchObject({
+      status: 422,
+      code: "VALIDATION_FAILED",
+      requestId: "validation-request",
+      fieldErrors: { password: "Isi password PostgreSQL untuk koneksi baru." },
+    });
+  });
+
+  it("handles a validation response with a null field-error map", async () => {
+    const response = Response.json(
+      {
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "Input tidak valid.",
+          field_errors: null,
+        },
+      },
+      { status: 422 },
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    await expect(createApiClient().request("/connections")).rejects.toMatchObject({
+      status: 422,
+      code: "VALIDATION_FAILED",
+      fieldErrors: {},
+    });
+  });
+
   it("rejects absolute and protocol-relative paths before sending a request", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

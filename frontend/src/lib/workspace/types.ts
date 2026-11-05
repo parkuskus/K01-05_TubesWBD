@@ -39,5 +39,5 @@ export type ConnectionInput = {
   database: string;
   username: string;
   password: string;
-  sslmode: "require" | "disable";
+  sslmode: "require" | "disable" | "verify-full";
 };

@@ -6,6 +6,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     readonly requestId?: string,
+    readonly fieldErrors: Readonly<Record<string, string>> = {},
   ) {
     super(message);
     this.name = "ApiError";
@@ -56,6 +57,7 @@ export function createApiClient(baseUrl = "/api/v1") {
           response.status,
           body.error?.code ?? "REQUEST_FAILED",
           body.request_id,
+          body.error?.field_errors ?? {},
         );
       }
       return body.data;
