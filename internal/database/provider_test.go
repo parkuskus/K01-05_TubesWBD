@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // A small database/sql connector verifies pool ownership without a live server.
@@ -309,3 +310,121 @@ func TestTargetConfigEscapesCredentialsAndSetsLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestAcquireExecutorConnPinsIsolatedConnectionAndTracksRevision(t *testing.T) {
+	m, store := testManager(t)
+	ctx := context.Background()
+	in := validInput()
+	c, err := m.Create(ctx, "admin", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var viewerProbes []*poolProbe
+	m.openPool = func(_ Connection, _ string) (*sql.DB, error) {
+		probe := &poolProbe{}
+		viewerProbes = append(viewerProbes, probe)
+		return sql.OpenDB(probe), nil
+	}
+
+	var (
+		execProbes      []*poolProbe
+		observedTimeout time.Duration
+	)
+	m.SetExecutorTimeout(15 * time.Minute)
+	m.setExecutorOpener(func(_ Connection, password string, timeout time.Duration) (*sql.DB, error) {
+		if password != *in.Password {
+			t.Errorf("executor opener password = %q, want %q", password, *in.Password)
+		}
+		observedTimeout = timeout
+		probe := &poolProbe{}
+		execProbes = append(execProbes, probe)
+		return sql.OpenDB(probe), nil
+	})
+
+	conn1, rev1, err := m.AcquireExecutorConn(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("AcquireExecutorConn() error = %v", err)
+	}
+	if rev1 != 1 {
+		t.Fatalf("rev1 = %d, want 1", rev1)
+	}
+	if observedTimeout != 15*time.Minute {
+		t.Fatalf("observedTimeout = %v, want 15m", observedTimeout)
+	}
+	if len(viewerProbes) != 0 {
+		t.Fatalf("AcquireExecutorConn touched viewer pool opener: %d", len(viewerProbes))
+	}
+
+	// Closing the pinned *sql.Conn must immediately close the physical connection (MaxIdleConns=0).
+	if err := conn1.Close(); err != nil {
+		t.Fatalf("conn1.Close() error = %v", err)
+	}
+	if execProbes[0].closed.Load() != 1 {
+		t.Fatalf("execProbes[0].closed = %d, want 1 after conn.Close()", execProbes[0].closed.Load())
+	}
+
+	// Updating connection metadata increments revision; next AcquireExecutorConn sees revision 2.
+	in.Name = "Updated Target"
+	if _, err := m.Update(ctx, "admin", c.ID, in); err != nil {
+		t.Fatal(err)
+	}
+	conn2, rev2, err := m.AcquireExecutorConn(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("second AcquireExecutorConn() error = %v", err)
+	}
+	if rev2 != 2 {
+		t.Fatalf("rev2 = %d, want 2", rev2)
+	}
+	_ = conn2.Close()
+
+	// Ping failure sanitizes error and closes physical connection without leaking.
+	failProbe := &poolProbe{pingErr: errors.New("password=topsecret")}
+	m.setExecutorOpener(func(Connection, string, time.Duration) (*sql.DB, error) {
+		return sql.OpenDB(failProbe), nil
+	})
+	if _, _, err := m.AcquireExecutorConn(ctx, c.ID); !errors.Is(err, ErrConnection) {
+		t.Fatalf("AcquireExecutorConn() on ping failure = %v, want ErrConnection", err)
+	}
+	if failProbe.closed.Load() < 1 {
+		t.Fatal("failed executor connection was not closed")
+	}
+
+	// Invalid ID and deleted connection errors match Pool semantics.
+	if _, _, err := m.AcquireExecutorConn(ctx, "bad-id"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("invalid id error = %v, want ErrInvalidInput", err)
+	}
+	delete(store.rows, c.ID)
+	if _, _, err := m.AcquireExecutorConn(ctx, c.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted id error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestExecutorTargetConfigIsolatesStatementTimeout(t *testing.T) {
+	t.Setenv("PGOPTIONS", "-c statement_timeout=0")
+	password := "exec-secret-pw"
+	c := Connection{Host: "127.0.0.1", Port: 5432, Database: "target_a", Username: "migrator", SSLMode: "disable"}
+
+	cfgDefault, err := executorTargetConfig(c, password, 0)
+	if err != nil {
+		t.Fatalf("executorTargetConfig default error = %v", err)
+	}
+	if cfgDefault.RuntimeParams["statement_timeout"] != "600000" {
+		t.Fatalf("default statement_timeout = %q, want 600000", cfgDefault.RuntimeParams["statement_timeout"])
+	}
+	if cfgDefault.RuntimeParams["application_name"] != "if3110-db-platform-worker" {
+		t.Fatalf("application_name = %q, want if3110-db-platform-worker", cfgDefault.RuntimeParams["application_name"])
+	}
+	if strings.Contains(cfgDefault.ConnString(), password) {
+		t.Fatal("pgx retained password in executor DSN")
+	}
+
+	cfgCustom, err := executorTargetConfig(c, password, 45*time.Second)
+	if err != nil {
+		t.Fatalf("executorTargetConfig custom error = %v", err)
+	}
+	if cfgCustom.RuntimeParams["statement_timeout"] != "45000" {
+		t.Fatalf("custom statement_timeout = %q, want 45000", cfgCustom.RuntimeParams["statement_timeout"])
+	}
+}
+
