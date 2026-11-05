@@ -25,14 +25,16 @@ type SessionManager interface {
 }
 
 type Config struct {
-	Authenticator Authenticator
-	Sessions      SessionManager
-	Authorizer    contracts.Authorizer
-	Platform      platformui.AdminService
-	Databases     *database.Manager
-	Migrations    migration.MigrationService
-	CSRFKey       []byte
-	SecureCookies bool
+	Authenticator   Authenticator
+	Sessions        SessionManager
+	Authorizer      contracts.Authorizer
+	Platform        platformui.AdminService
+	Databases       *database.Manager
+	Migrations      migration.MigrationService
+	CSRFKey         []byte
+	SecureCookies   bool
+	API             http.Handler
+	FrontendOrigins []string
 }
 
 var ErrInvalidConfig = errors.New("web server requires auth services")
@@ -48,6 +50,9 @@ func New(config Config) (http.Handler, error) {
 	}
 
 	mux := http.NewServeMux()
+	if config.API != nil {
+		mux.Handle("/api/", config.API)
+	}
 	handlers := authHandlers{authenticator: config.Authenticator, sessions: config.Sessions}
 	mux.HandleFunc("GET /login", handlers.loginPage)
 	mux.HandleFunc("POST /login", handlers.login)
@@ -102,5 +107,5 @@ func New(config Config) (http.Handler, error) {
 	}
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	return auth.CSRFProtection(config.CSRFKey, config.SecureCookies, mux)
+	return protectRoutes(config, mux)
 }

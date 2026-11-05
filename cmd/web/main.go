@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/db/migrations"
+	"if3110.local/db-platform/internal/api"
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
@@ -61,15 +62,21 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure migration service: %w", err)
 	}
+	apiHandler, err := api.NewAuthHandler(api.AuthConfig{Authenticator: authenticator, Sessions: sessions})
+	if err != nil {
+		return fmt.Errorf("configure auth API: %w", err)
+	}
 	handler, err := web.New(web.Config{
-		Authenticator: authenticator,
-		Sessions:      sessions,
-		Authorizer:    platformService,
-		Platform:      platformService,
-		Databases:     dbManager,
-		Migrations:    migrationService,
-		CSRFKey:       cfg.CSRFKey,
-		SecureCookies: cfg.SecureCookies,
+		Authenticator:   authenticator,
+		Sessions:        sessions,
+		Authorizer:      platformService,
+		Platform:        platformService,
+		Databases:       dbManager,
+		Migrations:      migrationService,
+		CSRFKey:         cfg.CSRFKey,
+		SecureCookies:   cfg.SecureCookies,
+		API:             apiHandler,
+		FrontendOrigins: cfg.FrontendOrigins,
 	})
 	if err != nil {
 		return fmt.Errorf("configure web routes: %w", err)
