@@ -13,14 +13,16 @@ export class ApiError extends Error {
   }
 }
 
-// No request is made until a feature calls this client. Auth/CSRF bootstrap is a
-// later task; the token stays in memory and session cookies remain HttpOnly.
 export function createApiClient(baseUrl = "/api/v1") {
   let csrfToken: string | null = null;
+  let onUnauthorized: ((path: string) => void) | null = null;
 
   return {
     setCsrfToken(token: string | null) {
       csrfToken = token;
+    },
+    setUnauthorizedHandler(handler: ((path: string) => void) | null) {
+      onUnauthorized = handler;
     },
     async request<T>(path: string, init: RequestInit = {}): Promise<T | undefined> {
       if (!path.startsWith("/") || path.startsWith("//")) {
@@ -42,6 +44,7 @@ export function createApiClient(baseUrl = "/api/v1") {
         cache: "no-store",
         redirect: "error",
       });
+      if (response.status === 401) onUnauthorized?.(path);
       if (response.status === 204) return undefined;
       if (!response.headers.get("Content-Type")?.includes("application/json")) {
         throw new ApiError(
