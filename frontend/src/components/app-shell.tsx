@@ -4,9 +4,10 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Activity, ChevronRight, Database, Menu, X } from "lucide-react";
+import { Activity, ChevronRight, Database, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useWorkspace } from "@/components/workspace-provider";
+import { useAuth } from "@/components/auth-provider";
+import { Brand } from "@/components/brand";
 import { cx } from "@/lib/utils";
 
 const navigation = [
@@ -17,15 +18,26 @@ const desktopMediaQuery = "(min-width: 64rem)";
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { source } = useWorkspace();
+  const { user, logout } = useAuth();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function endSession() {
+    if (pending) return;
+    setPending(true);
+    setError("");
+    try {
+      await logout();
+    } catch {
+      setError("Belum dapat keluar. Silakan coba lagi.");
+    } finally {
+      setPending(false);
+    }
+  }
   return (
     <div className="flex h-full flex-col bg-ground px-4 py-6">
       <Link href="/" onClick={onNavigate} className="flex min-h-11 items-center gap-2.5 px-3">
-        <svg viewBox="0 0 28 28" className="size-7 text-accent" fill="none" aria-hidden="true">
-          <rect x="2" y="2" width="24" height="24" rx="6" fill="currentColor" />
-          <path d="M8 9h12M14 9v11" stroke="white" strokeWidth="2.5" />
-        </svg>
-        <span className="text-[17px] font-semibold tracking-[-0.04em]">teras data</span>
+        <Brand />
       </Link>
       <div className="mx-3 mt-9 mb-3 text-xs font-medium text-ink-secondary">Workspace</div>
       <nav aria-label="Navigasi utama" className="space-y-1">
@@ -51,19 +63,25 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
       <div className="mt-auto px-3 pt-8 pb-2">
-        <div className="flex items-center gap-2 text-xs text-ink-secondary">
-          <span
-            className={cx(
-              "size-1.5 rounded-full",
-              source === "connected" ? "bg-accent" : "bg-control-border",
-            )}
-            aria-hidden="true"
-          />
-          {source === "local"
-            ? "Data lokal"
-            : source === "connected"
-              ? "Terhubung"
-              : "Belum terhubung"}
+        <div className="border-t border-line pt-5">
+          <p className="text-sm font-medium [overflow-wrap:anywhere]">{user?.username}</p>
+          <p className="mt-1 text-xs text-ink-secondary">
+            {user?.is_platform_admin ? "Administrator" : "Pengguna"}
+          </p>
+          <Button
+            variant="ghost"
+            className="mt-3 -ml-3"
+            disabled={pending}
+            onClick={() => void endSession()}
+          >
+            <LogOut aria-hidden="true" />
+            {pending ? "Keluar…" : "Keluar"}
+          </Button>
+          {error && (
+            <p role="alert" className="mt-2 text-xs leading-5 text-danger">
+              {error}
+            </p>
+          )}
         </div>
       </div>
     </div>

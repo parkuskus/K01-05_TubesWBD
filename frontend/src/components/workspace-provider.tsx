@@ -4,12 +4,17 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { WorkspaceSnapshot } from "@/lib/workspace/types";
 
 const WorkspaceContext = createContext<WorkspaceSnapshot | null>(null);
+const emptyWorkspace: WorkspaceSnapshot = {
+  source: "disconnected",
+  databases: [],
+  activity: [],
+};
 
 export function WorkspaceProvider({
-  snapshot,
+  snapshot = emptyWorkspace,
   children,
 }: {
-  snapshot: WorkspaceSnapshot;
+  snapshot?: WorkspaceSnapshot;
   children: ReactNode;
 }) {
   return <WorkspaceContext.Provider value={snapshot}>{children}</WorkspaceContext.Provider>;

@@ -26,7 +26,7 @@ export type ActivityItem = {
 };
 
 export type WorkspaceSnapshot = {
-  source: "local" | "connected" | "disconnected";
+  source: "connected" | "disconnected";
   databases: DatabaseSummary[];
   activity: ActivityItem[];
 };

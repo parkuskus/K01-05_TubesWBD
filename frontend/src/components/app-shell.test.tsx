@@ -7,6 +7,12 @@ import { AppShell } from "./app-shell";
 import { WorkspaceProvider } from "./workspace-provider";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    user: { username: "current-user", is_platform_admin: false },
+    logout: vi.fn(),
+  }),
+}));
 
 afterEach(() => {
   cleanup();
