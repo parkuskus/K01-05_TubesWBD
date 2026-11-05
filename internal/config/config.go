@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ type Config struct {
 	InitialAdminUsername   string
 	InitialAdminPassword   string
 	SecureCookies          bool
+	FrontendOrigins        []string
 	WorkerID               string
 	WorkerConcurrency      int
 	WorkerPollInterval     time.Duration
@@ -132,6 +134,16 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	}
 	if config.Environment == "production" && !config.SecureCookies {
 		return Config{}, errors.New("SECURE_COOKIES must be true in production")
+	}
+	if origin := get("FRONTEND_ORIGIN"); origin != "" {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
+			(parsed.Scheme != "http" && parsed.Scheme != "https") || (config.Environment == "production" && parsed.Scheme != "https") {
+			return Config{}, errors.New("FRONTEND_ORIGIN must be an HTTP origin without credentials or a path; production requires HTTPS")
+		}
+		config.FrontendOrigins = []string{parsed.Scheme + "://" + parsed.Host}
+	} else if config.Environment == "development" {
+		config.FrontendOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
 	}
 
 	if config.WorkerID == "" {

@@ -8,6 +8,39 @@ import (
 	"time"
 )
 
+func TestFrontendOriginValidation(t *testing.T) {
+	for _, test := range []struct {
+		origin, environment string
+		valid               bool
+	}{
+		{"http://localhost:3000", "development", true},
+		{"https://workspace.example", "production", true},
+		{"http://workspace.example", "production", false},
+		{"https://workspace.example/login", "production", false},
+		{"https://private:secret@workspace.example", "production", false},
+		{"https://workspace.example?next=private", "production", false},
+		{"//workspace.example", "development", false},
+	} {
+		t.Run(test.origin, func(t *testing.T) {
+			values := map[string]string{
+				"PLATFORM_DATABASE_URL":   "postgres://localhost/platform_dev",
+				"CSRF_AUTH_KEY":           strings.Repeat("ab", 32),
+				"DATABASE_CREDENTIAL_KEY": strings.Repeat("cd", 32),
+				"SECURE_COOKIES":          "true",
+				"APP_ENV":                 test.environment,
+				"FRONTEND_ORIGIN":         test.origin,
+			}
+			cfg, err := parseConfig(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
+			if (err == nil) != test.valid {
+				t.Fatalf("origin accepted = %t, want %t", err == nil, test.valid)
+			}
+			if test.valid && (len(cfg.FrontendOrigins) != 1 || cfg.FrontendOrigins[0] != test.origin) {
+				t.Fatal("origin was not preserved")
+			}
+		})
+	}
+}
+
 func TestParseConfigRequiresPlatformDatabaseCSRFAndCredentialKeys(t *testing.T) {
 	validCSRFKey := strings.Repeat("ab", 32)
 	validCredKey := strings.Repeat("cd", 32)

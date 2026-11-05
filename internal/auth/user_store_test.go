@@ -13,6 +13,15 @@ type fakeUserStore struct {
 	users map[string]userRecord
 }
 
+func (s *fakeUserStore) FindIdentity(_ context.Context, id contracts.UserID) (Identity, error) {
+	for _, user := range s.users {
+		if user.ID == id {
+			return Identity{ID: user.ID, Username: user.Username, IsPlatformAdmin: user.IsPlatformAdmin}, nil
+		}
+	}
+	return Identity{}, ErrUnauthenticated
+}
+
 func (s *fakeUserStore) FindByUsername(_ context.Context, username string) (userRecord, error) {
 	for key, record := range s.users {
 		if strings.EqualFold(key, username) {

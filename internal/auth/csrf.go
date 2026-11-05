@@ -10,16 +10,16 @@ import (
 var ErrInvalidCSRFKey = errors.New("CSRF authentication key must be 32 bytes")
 
 // CSRFProtection wraps a handler with synchronizer-token protection, including unauthenticated forms such as login.
-func CSRFProtection(key []byte, secure bool, next http.Handler) (http.Handler, error) {
+func CSRFProtection(key []byte, secure bool, next http.Handler, options ...csrf.Option) (http.Handler, error) {
 	if len(key) != 32 {
 		return nil, ErrInvalidCSRFKey
 	}
-	protect := csrf.Protect(
-		key,
+	defaults := []csrf.Option{
 		csrf.Secure(secure),
 		csrf.SameSite(csrf.SameSiteLaxMode),
 		csrf.Path("/"),
-	)
+	}
+	protect := csrf.Protect(key, append(defaults, options...)...)
 	protected := protect(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !secure && r.TLS == nil {

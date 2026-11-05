@@ -32,6 +32,21 @@ go.work.sum
 # env file
 .env
 
+# Frontend dependencies, generated output, and local configuration
+/frontend/node_modules/
+/frontend/.next/
+/frontend/out/
+/frontend/coverage/
+/frontend/playwright-report/
+/frontend/test-results/
+/frontend/.vitest/
+/frontend/*.tsbuildinfo
+/frontend/next-env.d.ts
+/frontend/.env*
+!/frontend/.env.example
+!/frontend/README.md
+npm-debug.log*
+
 # Editor/IDE
 # .idea/
 # .vscode/

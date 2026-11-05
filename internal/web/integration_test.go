@@ -505,7 +505,7 @@ func TestPostgresEndToEndWebFlow(t *testing.T) {
 	if viewerDiff.Code != http.StatusOK || strings.Contains(viewerDiff.Body.String(), "Buat draft migration") {
 		t.Fatalf("view-only diff status=%d or exposes draft action", viewerDiff.Code)
 	}
-	_, viewerDiffToken := extractCSRF(t, viewerDiff)
+	viewerDiffToken := viewerClient.csrfFrom("/")
 	if resp := viewerClient.post("/databases/1/schemas/diff", url.Values{
 		"reference": {referenceSchema}, "target": {destinationSchema}, "gorilla.csrf.Token": {viewerDiffToken},
 	}); resp.Code != http.StatusForbidden {
