@@ -13,9 +13,13 @@ export function PageHeading({
 }) {
   return (
     <div className="mb-9 flex flex-wrap items-start justify-between gap-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-[-0.035em]">{title}</h1>
-        <p className="mt-2 text-sm leading-6 text-ink-secondary">{description}</p>
+      <div className="min-w-0 flex-1 basis-56">
+        <h1 className="text-2xl font-semibold tracking-[-0.035em] [overflow-wrap:anywhere]">
+          {title}
+        </h1>
+        <p className="mt-2 text-sm leading-6 [overflow-wrap:anywhere] text-ink-secondary">
+          {description}
+        </p>
       </div>
       {action}
     </div>
