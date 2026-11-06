@@ -134,8 +134,9 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(fields) > 0 {
 		writeJSON(w, http.StatusUnprocessableEntity, struct {
-			Error errorDetail `json:"error"`
-		}{Error: errorDetail{Code: "VALIDATION_FAILED", Message: "Periksa isian login.", FieldErrors: fields}})
+			Error     errorDetail `json:"error"`
+			RequestID string      `json:"request_id,omitempty"`
+		}{Error: errorDetail{Code: "VALIDATION_FAILED", Message: "Periksa isian login.", FieldErrors: fields}, RequestID: w.Header().Get("X-Request-ID")})
 		return
 	}
 	proof, err := h.authenticator.AuthenticateForSession(r.Context(), input.Username, input.Password)
@@ -147,6 +148,7 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 		h.sessionError(w, r, err)
 		return
 	}
+	r = r.WithContext(auth.WithUser(r.Context(), proof.UserID))
 	identity, err := h.authenticator.Identity(r.Context(), proof.UserID)
 	if err != nil {
 		h.sessionError(w, r, err)
