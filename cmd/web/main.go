@@ -81,6 +81,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure auth API: %w", err)
 	}
+	platformAPI, err := api.NewPlatformHandler(platformService, platformService, sessions)
+	if err != nil {
+		return fmt.Errorf("configure platform API: %w", err)
+	}
+	apiRoutes := http.NewServeMux()
+	apiRoutes.Handle("/api/v1/users", platformAPI)
+	apiRoutes.Handle("/api/v1/users/", platformAPI)
+	apiRoutes.Handle("/api/v1/groups", platformAPI)
+	apiRoutes.Handle("/api/v1/groups/", platformAPI)
+	apiRoutes.Handle("/api/", apiHandler)
 	handler, err := web.New(web.Config{
 		Authenticator:   authenticator,
 		Sessions:        sessions,
@@ -90,7 +100,7 @@ func run() error {
 		Migrations:      migrationService,
 		CSRFKey:         cfg.CSRFKey,
 		SecureCookies:   cfg.SecureCookies,
-		API:             apiHandler,
+		API:             apiRoutes,
 		FrontendOrigins: cfg.FrontendOrigins,
 	})
 	if err != nil {
