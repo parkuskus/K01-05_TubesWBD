@@ -205,6 +205,13 @@ func (c *fakeOrdinaryConn) QueryContext(_ context.Context, query string, args []
 		}
 		return &fakeEmptyRows{cols: []string{"migration_id", "version"}}, nil
 
+	case strings.Contains(trimmed, "FROM if3110_platform.migration_history_v2") && strings.Contains(trimmed, "ORDER BY id ASC"):
+		hist := c.db.history
+		if c.db.inTx {
+			hist = c.db.stagedHistory
+		}
+		return &fakeCommitHistoryRows{events: hist}, nil
+
 	default:
 		return nil, errors.New("unexpected QueryContext query: " + trimmed)
 	}
