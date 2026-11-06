@@ -32,9 +32,10 @@ type fakeBatchEngineDB struct {
 	proofs        map[string]ExecutionCommitProof
 	history       []contracts.CommitHistoryEvent
 	head          contracts.ActiveHeadState
-	txCommitCount int
-	failOnBatchNo int
-	failBatchErr  error
+	txCommitCount         int
+	failOnBatchNo         int
+	failBatchErr          error
+	compensatedBatchOrder []int
 
 	inTx               bool
 	stagedTableRows    map[int64]fakeBatchRowData
@@ -417,6 +418,7 @@ func (c *fakeBatchEngineConn) ExecContext(_ context.Context, query string, args 
 			_ = json.Unmarshal(r.BeforeData, &before)
 			db.stagedTableRows[r.RowID] = before
 		}
+		db.compensatedBatchOrder = append(db.compensatedBatchOrder, batchNo)
 		return driver.RowsAffected(int64(len(recRows))), nil
 
 	default:

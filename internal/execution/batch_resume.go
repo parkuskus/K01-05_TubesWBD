@@ -67,10 +67,14 @@ func (e *BatchExecutor) Execute(ctx context.Context, env ExecutionEnv) (Executio
 	}
 	plan := env.Claimed.Job.Plan
 	if err := plan.Validate(); err != nil {
+		code := "INVALID_PLAN"
+		if errors.Is(err, contracts.ErrIrreversibleMigration) {
+			code = "IRREVERSIBLE_MIGRATION"
+		}
 		return ExecutionResult{
 			JobStatus:     contracts.JobStatusFailed,
 			AttemptStatus: contracts.AttemptStatusRolledBack,
-			ErrorCode:     "INVALID_PLAN",
+			ErrorCode:     code,
 			ErrorMessage:  err.Error(),
 		}, nil
 	}
@@ -88,6 +92,8 @@ func (e *BatchExecutor) Execute(ctx context.Context, env ExecutionEnv) (Executio
 		return e.ExecuteBatchUp(ctx, env)
 	case contracts.DirectionResume:
 		return e.ExecuteBatchResume(ctx, env)
+	case contracts.DirectionCompensate, contracts.DirectionRollback:
+		return e.ExecuteBatchCompensation(ctx, env)
 	default:
 		return ExecutionResult{
 			JobStatus:     contracts.JobStatusFailed,
@@ -107,10 +113,14 @@ func (e *BatchExecutor) ExecuteBatchResume(ctx context.Context, env ExecutionEnv
 	}
 	plan := env.Claimed.Job.Plan
 	if err := plan.Validate(); err != nil {
+		code := "INVALID_PLAN"
+		if errors.Is(err, contracts.ErrIrreversibleMigration) {
+			code = "IRREVERSIBLE_MIGRATION"
+		}
 		return ExecutionResult{
 			JobStatus:     contracts.JobStatusFailed,
 			AttemptStatus: contracts.AttemptStatusRolledBack,
-			ErrorCode:     "INVALID_PLAN",
+			ErrorCode:     code,
 			ErrorMessage:  err.Error(),
 		}, nil
 	}
