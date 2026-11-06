@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/internal/contracts"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 const defaultExecutorStatementTimeout = 10 * time.Minute
@@ -236,6 +237,7 @@ func targetConfig(c Connection, password string) (*pgx.ConnConfig, error) {
 		return nil, ErrConnection
 	}
 	cfg.Password = password
+	cfg.Tracer = &telemetry.QueryTracer{DatabaseID: string(c.ID), Role: "target"}
 	// Do not inherit PGOPTIONS/search_path from the platform process.
 	cfg.RuntimeParams = map[string]string{"statement_timeout": "30000", "application_name": "if3110-db-platform"}
 	return cfg, nil

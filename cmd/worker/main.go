@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,34 +9,41 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
 	"if3110.local/db-platform/internal/execution"
 	"if3110.local/db-platform/internal/jobs"
 	"if3110.local/db-platform/internal/platform"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
-
-	if err := run(logger); err != nil {
-		logger.Error("worker exited with error", slog.String("error", err.Error()))
+	if err := run(); err != nil {
+		slog.Error("worker.stopped", "status", "FAILED", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(logger *slog.Logger) error {
+func run() error {
+	shutdown, err := telemetry.Setup("teras-data-worker", os.Stdout, os.Stderr)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			slog.Error("telemetry.shutdown_failed", "error", err)
+		}
+	}()
+	logger := slog.Default()
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
-	db, err := sql.Open("pgx", cfg.PlatformDatabaseURL)
+	db, err := telemetry.OpenPlatform(cfg.PlatformDatabaseURL)
 	if err != nil {
 		return fmt.Errorf("open platform database: %w", err)
 	}
