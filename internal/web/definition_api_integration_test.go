@@ -125,4 +125,11 @@ func TestPostgresDefinitionAPI(t *testing.T) {
 	if w := request("GET", detail, "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "SELECT 3") {
 		t.Fatalf("detail: %d %s", w.Code, w.Body.String())
 	}
+	if w := request("POST", detail+"/validate", "", ""); w.Code != 403 {
+		t.Fatalf("validation without CSRF: %d %s", w.Code, w.Body.String())
+	}
+	validated := request("POST", detail+"/validate", "", csrf.Data.Token)
+	if validated.Code != 200 || !strings.Contains(validated.Body.String(), `"valid":true`) || !strings.Contains(validated.Body.String(), `"COMPATIBILITY_UNVERIFIED"`) {
+		t.Fatalf("validation: %d %s", validated.Code, validated.Body.String())
+	}
 }

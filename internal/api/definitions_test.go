@@ -33,6 +33,10 @@ func (f *definitionFixture) Revise(_ context.Context, _ contracts.UserID, id con
 	f.calls = append(f.calls, "revise:"+migrationID+":"+strconv.Itoa(expected))
 	return definition.Definition{ID: migrationID, DatabaseID: id, Revision: expected + 1, Input: in}, f.err
 }
+func (f *definitionFixture) Validate(_ context.Context, _ contracts.UserID, _ contracts.DatabaseID, migrationID string) (definition.ValidationReport, error) {
+	f.calls = append(f.calls, "validate:"+migrationID)
+	return definition.ValidationReport{MigrationID: migrationID, Revision: 2, Checksum: "abc", Valid: true, Errors: []definition.ValidationIssue{}, Warnings: []definition.ValidationIssue{{Code: "COMPATIBILITY_UNVERIFIED", Message: "Review compatibility."}}, CompatibilityNotes: "Coordinate release."}, f.err
+}
 
 func TestDefinitionAPIRoutes(t *testing.T) {
 	in := `{"title":"First","up_sql":"SELECT 1","down_sql":"SELECT 2","mode":"NORMAL"}`
@@ -44,6 +48,7 @@ func TestDefinitionAPIRoutes(t *testing.T) {
 		{"GET", "/api/v1/databases/2/migrations/3", "", "get:3", `"id":"3"`, 200},
 		{"POST", "/api/v1/databases/2/migrations", in, "create:SELECT 1", `"id":"3"`, 201},
 		{"PATCH", "/api/v1/databases/2/migrations/3", `{"expected_revision":1,"title":"First","up_sql":"SELECT 1","down_sql":"SELECT 2","mode":"NORMAL"}`, "revise:3:1", `"revision":2`, 200},
+		{"POST", "/api/v1/databases/2/migrations/3/validate", "", "validate:3", `"compatibility_notes":"Coordinate release."`, 200},
 	} {
 		t.Run(tc.method+tc.path, func(t *testing.T) {
 			f := &definitionFixture{}
@@ -71,6 +76,8 @@ func TestDefinitionAPIRejectsInvalidAndLeaksNoErrors(t *testing.T) {
 		{"", "GET", "/api/v1/databases/2/migrations", "", 401},
 		{"1", "GET", "/api/v1/databases/0/migrations", "", 400},
 		{"1", "GET", "/api/v1/databases/2/migrations/garbage", "", 400},
+		{"1", "POST", "/api/v1/databases/2/migrations/not-id/validate", "", 400},
+		{"1", "GET", "/api/v1/databases/2/migrations/3/validate", "", 405},
 		{"1", "PATCH", "/api/v1/databases/2/migrations/3", `{"expected_revision":0}`, 400},
 		{"1", "POST", "/api/v1/databases/2/migrations", `{"up_sql":null}`, 400},
 		{"1", "POST", "/api/v1/databases/2/migrations", `{"up_sql":"SELECT 1","up_sql":"SELECT 2"}`, 400},

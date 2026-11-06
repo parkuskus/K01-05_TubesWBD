@@ -117,6 +117,20 @@ func TestPostgresDefinitionRevisionLifecycle(t *testing.T) {
 	if err != nil || revised.Revision != 2 || revised.Checksum == created.Checksum {
 		t.Fatalf("revise: %+v %v", revised, err)
 	}
+	report, err := s.Validate(ctx, actor, id, revised.ID)
+	if err != nil || !report.Valid || report.MigrationID != revised.ID || report.Revision != revised.Revision || report.Checksum != revised.Checksum || report.CompatibilityNotes != revised.Notes {
+		t.Fatalf("validate: %+v %v", report, err)
+	}
+	if _, err := s.Validate(ctx, "99999", id, revised.ID); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("unauthorized validation: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE database_connections SET revision=revision+1 WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := s.Validate(ctx, actor, id, revised.ID)
+	if err != nil || stale.Valid || !hasValidationIssue(stale.Errors, "STALE_CONNECTION_REVISION") {
+		t.Fatalf("changed connection revision must invalidate report: %+v %v", stale, err)
+	}
 	if _, err := s.Revise(ctx, actor, id, created.ID, 1, in); !errors.Is(err, definition.ErrConflict) {
 		t.Fatalf("stale edit: %v", err)
 	}
@@ -133,6 +147,10 @@ func TestPostgresDefinitionRevisionLifecycle(t *testing.T) {
 	if err := s.MarkAttempted(ctx, created.ID, 2); err != nil {
 		t.Fatal(err)
 	}
+	locked, err := s.Validate(ctx, actor, id, created.ID)
+	if err != nil || locked.Valid || !hasValidationIssue(locked.Errors, "INVALID_STATE") {
+		t.Fatalf("locked definition must not validate for review: %+v %v", locked, err)
+	}
 	if err := s.MarkAttempted(ctx, created.ID, 2); err != nil {
 		t.Fatalf("idempotent attempt: %v", err)
 	}
@@ -145,6 +163,15 @@ func TestPostgresDefinitionRevisionLifecycle(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO migration_revisions(migration_id,revision,up_sql,down_sql,irreversible,reason,mode,batch_plan,notes,checksum) VALUES($1,3,'SELECT 3','SELECT 4',false,'','NORMAL','{}','','`+strings.Repeat("0", 64)+`')`, created.ID); err == nil {
 		t.Fatal("new revision inserted after attempt")
 	}
+}
+
+func hasValidationIssue(issues []definition.ValidationIssue, code string) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func TestPostgresDefinitionConcurrentVersions(t *testing.T) {
