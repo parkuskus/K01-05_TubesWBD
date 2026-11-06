@@ -6,10 +6,12 @@ import userEvent from "@testing-library/user-event";
 import { AppShell } from "./app-shell";
 import { WorkspaceProvider } from "./workspace-provider";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+let pathname = "/";
+const identity = { username: "current-user", is_platform_admin: false };
+vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
 vi.mock("@/components/auth-provider", () => ({
   useAuth: () => ({
-    user: { username: "current-user", is_platform_admin: false },
+    user: identity,
     logout: vi.fn(),
   }),
 }));
@@ -17,6 +19,42 @@ vi.mock("@/components/auth-provider", () => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  pathname = "/";
+  identity.is_platform_admin = false;
+});
+
+it("exposes admin navigation only to an admin and marks nested pages as active", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => new EventTarget()),
+  );
+  pathname = "/platform/groups/7";
+  const view = render(
+    <AppShell>
+      <p>Konten grup</p>
+    </AppShell>,
+  );
+  expect(screen.queryByRole("link", { name: "Pengguna" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Grup" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Koneksi" })).toBeNull();
+  identity.is_platform_admin = true;
+  view.rerender(
+    <AppShell>
+      <p>Konten grup</p>
+    </AppShell>,
+  );
+  expect(screen.getByRole("link", { name: "Grup" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("link", { name: "Pengguna" }).getAttribute("href")).toBe(
+    "/platform/users",
+  );
+  expect(screen.getByRole("link", { name: "Koneksi" }).getAttribute("href")).toBe("/connections");
+  pathname = "/databases/1/schema-diff";
+  view.rerender(
+    <AppShell>
+      <p>Schema diff</p>
+    </AppShell>,
+  );
+  expect(screen.getByRole("link", { name: "Database" }).getAttribute("aria-current")).toBe("page");
 });
 
 it("closes mobile navigation at the desktop breakpoint and restores page interaction", async () => {
