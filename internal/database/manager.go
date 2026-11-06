@@ -175,3 +175,12 @@ func (m *Manager) Delete(ctx context.Context, actor contracts.UserID, id contrac
 	m.invalidate(id)
 	return nil
 }
+
+// TestConnection pings the stored target without issuing SQL mutations.
+func (m *Manager) TestConnection(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID) error {
+	if err := m.requireAdmin(ctx, actor); err != nil {
+		return err
+	}
+	_, err := m.Pool(ctx, id)
+	return err
+}

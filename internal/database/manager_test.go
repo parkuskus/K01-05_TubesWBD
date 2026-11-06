@@ -116,6 +116,23 @@ func testManager(t *testing.T) (*Manager, *memoryStore) {
 	return m, s
 }
 
+func TestManagerTestConnectionAuthorizationAndDescribe(t *testing.T) {
+	m, store := testManager(t)
+	ctx := context.Background()
+	if err := m.TestConnection(ctx, "member", "1"); !errors.Is(err, contracts.ErrForbidden) || store.calls != 0 {
+		t.Fatalf("unauthorized test: %v, storage calls %d", err, store.calls)
+	}
+	if err := m.TestConnection(ctx, "admin", "0"); !errors.Is(err, ErrInvalidInput) || store.calls != 0 {
+		t.Fatalf("invalid ID: %v, storage calls %d", err, store.calls)
+	}
+	if err := m.TestConnection(ctx, "admin", "1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing connection: %v", err)
+	}
+	if _, err := m.Describe(ctx, "admin", "1"); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("admin without grant: %v", err)
+	}
+}
+
 func TestManagerCRUDEncryptsAndHidesPassword(t *testing.T) {
 	m, store := testManager(t)
 	ctx := context.Background()

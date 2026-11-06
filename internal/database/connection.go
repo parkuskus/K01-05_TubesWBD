@@ -95,6 +95,12 @@ func (in ConnectionInput) validateFields(create bool) (ConnectionInput, map[stri
 	return in, fields
 }
 
+// ValidationFields returns safe field guidance without echoing user input.
+func (in ConnectionInput) ValidationFields(create bool) map[string]string {
+	_, fields := in.validateFields(create)
+	return fields
+}
+
 func validText(s string, limit int) bool {
 	return strings.TrimSpace(s) != "" && len(s) <= limit && utf8.ValidString(s) &&
 		strings.IndexFunc(s, unicode.IsControl) == -1
