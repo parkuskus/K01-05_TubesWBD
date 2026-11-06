@@ -20,12 +20,14 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, struct {
-		Error errorDetail `json:"error"`
-	}{Error: errorDetail{Code: code, Message: message}})
+		Error     errorDetail `json:"error"`
+		RequestID string      `json:"request_id,omitempty"`
+	}{Error: errorDetail{Code: code, Message: message}, RequestID: w.Header().Get("X-Request-ID")})
 }
 
 func writeData(w http.ResponseWriter, data any) {
 	writeJSON(w, http.StatusOK, struct {
-		Data any `json:"data"`
-	}{Data: data})
+		Data      any    `json:"data"`
+		RequestID string `json:"request_id,omitempty"`
+	}{Data: data, RequestID: w.Header().Get("X-Request-ID")})
 }

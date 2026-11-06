@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"if3110.local/db-platform/internal/contracts"
 	"if3110.local/db-platform/internal/jobs"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 // JobQueue defines the durable queue operations consumed by Worker.
@@ -187,10 +189,10 @@ func (w *Worker) runSlot(ctx context.Context, slotWorkerID string) {
 
 		processed, err := w.ProcessOnce(ctx, slotWorkerID)
 		if err != nil && ctx.Err() == nil {
-			w.cfg.Logger.Error(
-				"worker slot cycle error",
+			w.cfg.Logger.ErrorContext(ctx,
+				"worker.poll.failed",
 				slog.String("worker_id", slotWorkerID),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 
@@ -217,7 +219,7 @@ func (w *Worker) runSlot(ctx context.Context, slotWorkerID string) {
 
 // ProcessOnce claims and processes at most one due job using the given slotWorkerID.
 // It returns processed=true if a job was claimed, or processed=false when no job is due.
-func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, error) {
+func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (processed bool, processErr error) {
 	if w == nil {
 		return false, errors.New("worker is nil")
 	}
@@ -236,6 +238,17 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 		}
 		return false, err
 	}
+	ctx = telemetry.Extract(ctx, claimed.Job.TraceCarrier)
+	ctx = telemetry.WithFields(ctx, telemetry.Fields{
+		ActorID: string(claimed.Job.ActorID), DatabaseID: string(claimed.Job.DatabaseID),
+		MigrationID: string(claimed.Job.Plan.MigrationID), RevisionID: string(claimed.Job.Plan.RevisionID),
+		JobID: string(claimed.Job.ID), ExecutionID: string(claimed.Job.ExecutionID),
+		AttemptID: string(claimed.Attempt.ID), Attempt: claimed.Attempt.AttemptNo,
+		Direction: string(claimed.Job.Direction),
+	})
+	ctx, span := telemetry.StartSpan(ctx, "worker.attempt", trace.WithSpanKind(trace.SpanKindConsumer))
+	defer func() { telemetry.FinishSpan(span, processErr) }()
+	w.cfg.Logger.InfoContext(ctx, "worker.attempt.start", "worker_id", slotWorkerID, "status", "STARTED")
 
 	// Detach from poll loop cancellation so an in-flight attempt gets a bounded
 	// graceful shutdown window to finish or roll back cleanly.
@@ -255,7 +268,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 
 	plan := claimed.Job.Plan
 	if err := plan.Validate(); err != nil {
-		_, _, completeErr := w.cfg.Queue.CompleteAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
+		_, _, completeErr := w.completeAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
 			JobID:         claimed.Job.ID,
 			AttemptID:     claimed.Attempt.ID,
 			LeaseToken:    claimed.Job.LeaseToken,
@@ -269,7 +282,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 
 	conn, connRev, err := w.cfg.ConnProvider.AcquireExecutorConn(attemptCtx, claimed.Job.DatabaseID)
 	if err != nil {
-		_, _, retryErr := w.cfg.Queue.ScheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
+		_, _, retryErr := w.scheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
 			JobID:         claimed.Job.ID,
 			AttemptID:     claimed.Attempt.ID,
 			LeaseToken:    claimed.Job.LeaseToken,
@@ -282,7 +295,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 
 	if plan.TargetConnectionRevision > 0 && connRev != plan.TargetConnectionRevision {
 		_ = conn.Close()
-		_, _, completeErr := w.cfg.Queue.CompleteAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
+		_, _, completeErr := w.completeAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
 			JobID:         claimed.Job.ID,
 			AttemptID:     claimed.Attempt.ID,
 			LeaseToken:    claimed.Job.LeaseToken,
@@ -305,7 +318,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 		if errors.Is(err, ErrTargetLockBusy) {
 			errCode = "TARGET_LOCK_BUSY"
 		}
-		_, _, retryErr := w.cfg.Queue.ScheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
+		_, _, retryErr := w.scheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
 			JobID:         claimed.Job.ID,
 			AttemptID:     claimed.Attempt.ID,
 			LeaseToken:    claimed.Job.LeaseToken,
@@ -323,7 +336,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 	if w.cfg.HeadReader != nil {
 		currentHead, err = w.cfg.HeadReader.ReadActiveHeadOnConn(attemptCtx, targetLock.Conn())
 		if err != nil {
-			_, _, retryErr := w.cfg.Queue.ScheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
+			_, _, retryErr := w.scheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
 				JobID:         claimed.Job.ID,
 				AttemptID:     claimed.Attempt.ID,
 				LeaseToken:    claimed.Job.LeaseToken,
@@ -336,7 +349,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 	}
 
 	if status, code, msg, rejected := w.revalidateUnderLock(attemptCtx, plan, currentHead); rejected {
-		_, _, completeErr := w.cfg.Queue.CompleteAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
+		_, _, completeErr := w.completeAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
 			JobID:         claimed.Job.ID,
 			AttemptID:     claimed.Attempt.ID,
 			LeaseToken:    claimed.Job.LeaseToken,
@@ -348,12 +361,18 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 		return true, completeErr
 	}
 
-	execResult, execErr := w.cfg.Executor.Execute(attemptCtx, ExecutionEnv{
+	execCtx, execSpan := telemetry.StartSpan(attemptCtx, "worker.execute")
+	execResult, execErr := w.cfg.Executor.Execute(execCtx, ExecutionEnv{
 		Claimed:    claimed,
 		Conn:       targetLock.Conn(),
 		Lock:       targetLock,
 		HeadBefore: currentHead,
 	})
+	spanErr := execErr
+	if spanErr == nil && (execResult.TransientRetryable || execResult.JobStatus != "" && execResult.JobStatus != contracts.JobStatusSuccess) {
+		spanErr = errors.New("execution did not succeed")
+	}
+	telemetry.FinishSpan(execSpan, spanErr)
 	if execResult.TransientRetryable {
 		errMsg := execResult.ErrorMessage
 		if errMsg == "" && execErr != nil {
@@ -363,7 +382,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 		if errCode == "" {
 			errCode = "EXECUTION_TRANSIENT_ERROR"
 		}
-		_, _, retryErr := w.cfg.Queue.ScheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
+		_, _, retryErr := w.scheduleRetry(attemptBaseCtx, jobs.ScheduleRetryInput{
 			JobID:         claimed.Job.ID,
 			AttemptID:     claimed.Attempt.ID,
 			LeaseToken:    claimed.Job.LeaseToken,
@@ -402,7 +421,7 @@ func (w *Worker) ProcessOnce(ctx context.Context, slotWorkerID string) (bool, er
 		}
 	}
 
-	_, _, completeErr := w.cfg.Queue.CompleteAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
+	_, _, completeErr := w.completeAttempt(attemptBaseCtx, jobs.CompleteAttemptInput{
 		JobID:               claimed.Job.ID,
 		AttemptID:           claimed.Attempt.ID,
 		LeaseToken:          claimed.Job.LeaseToken,
@@ -423,7 +442,15 @@ func (w *Worker) revalidateUnderLock(
 	ctx context.Context,
 	plan contracts.ExecutionPlan,
 	currentHead contracts.ActiveHeadState,
-) (contracts.JobStatus, string, string, bool) {
+) (status contracts.JobStatus, code string, message string, rejected bool) {
+	ctx, span := telemetry.StartSpan(ctx, "worker.revalidate")
+	defer func() {
+		var err error
+		if rejected {
+			err = errors.New("revalidation rejected")
+		}
+		telemetry.FinishSpan(span, err)
+	}()
 	if currentHead.UnresolvedReason != "" {
 		isRecovery := (plan.Direction == contracts.DirectionResume || plan.Direction == contracts.DirectionCompensate) &&
 			(currentHead.UnresolvedReason == contracts.GateReasonPartial || currentHead.UnresolvedReason == contracts.GateReasonPartiallyReverted) &&
@@ -482,6 +509,9 @@ func (w *Worker) startHeartbeatLoop(
 				return
 			case <-ticker.C:
 				_, err := w.cfg.Queue.Heartbeat(ctx, jobID, leaseToken, w.cfg.LeaseDuration)
+				if err != nil {
+					w.cfg.Logger.WarnContext(ctx, "worker.heartbeat.failed", "status", "FAILED", "error", err)
+				}
 				if errors.Is(err, jobs.ErrLeaseMismatch) {
 					cancelAttempt()
 					return

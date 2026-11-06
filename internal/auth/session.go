@@ -8,11 +8,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"time"
 
 	"if3110.local/db-platform/internal/contracts"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 const (
@@ -124,11 +126,13 @@ func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request, proof Lo
 			previousHash = hash[:]
 		}
 	}
-	record, err := m.store.Create(r.Context(), proof, tokenHash[:], previousHash, now, now.Add(m.config.AbsoluteLifetime), m.config.IdleTimeout)
+	ctx := WithUser(r.Context(), proof.UserID)
+	record, err := m.store.Create(ctx, proof, tokenHash[:], previousHash, now, now.Add(m.config.AbsoluteLifetime), m.config.IdleTimeout)
 	if err != nil {
 		return err
 	}
 	m.setCookie(w, token, now, record.AbsoluteExpiresAt)
+	slog.InfoContext(ctx, "auth.login.result", "status", "SUCCESS")
 	return nil
 }
 
@@ -236,7 +240,11 @@ func (m *SessionManager) Logout(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return nil
 	}
-	return m.store.RevokeToken(r.Context(), tokenHash[:], m.now())
+	err = m.store.RevokeToken(r.Context(), tokenHash[:], m.now())
+	if err == nil {
+		slog.InfoContext(r.Context(), "auth.logout.result", "status", "SUCCESS")
+	}
+	return err
 }
 
 // RevokeUser invalidates all active sessions for a user.
@@ -248,6 +256,7 @@ func (m *SessionManager) RevokeUser(ctx context.Context, userID contracts.UserID
 }
 
 func WithUser(ctx context.Context, userID contracts.UserID) context.Context {
+	ctx = telemetry.WithFields(ctx, telemetry.Fields{ActorID: string(userID)})
 	return context.WithValue(ctx, userContextKey{}, userID)
 }
 

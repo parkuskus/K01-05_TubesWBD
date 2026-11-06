@@ -11,6 +11,7 @@ import (
 	"if3110.local/db-platform/internal/database"
 	"if3110.local/db-platform/internal/migration"
 	"if3110.local/db-platform/internal/platformui"
+	"if3110.local/db-platform/internal/telemetry"
 	"if3110.local/db-platform/internal/ui"
 )
 
@@ -107,5 +108,9 @@ func New(config Config) (http.Handler, error) {
 	}
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	return protectRoutes(config, mux)
+	protected, err := protectRoutes(config, mux)
+	if err != nil {
+		return nil, err
+	}
+	return telemetry.HTTP(protected), nil
 }

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"if3110.local/db-platform/internal/contracts"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 // TargetLockNamespace ("IF31" in ASCII) namespaces all target database session
@@ -54,7 +56,18 @@ type TargetSessionLock struct {
 // it stays held across multiple batch COMMITs on the same *sql.Conn.
 // If the lock is currently held by another session, AcquireTargetSessionLock
 // returns ErrTargetLockBusy without executing any target DDL/DML.
-func AcquireTargetSessionLock(ctx context.Context, conn *sql.Conn) (*TargetSessionLock, error) {
+func AcquireTargetSessionLock(ctx context.Context, conn *sql.Conn) (lock *TargetSessionLock, lockErr error) {
+	ctx, span := telemetry.StartSpan(ctx, "worker.lock.acquire")
+	started := time.Now()
+	defer func() {
+		status := "SUCCESS"
+		if lockErr != nil {
+			status = "FAILED"
+		}
+		slog.InfoContext(ctx, "worker.lock.result", "status", status, "busy", errors.Is(lockErr, ErrTargetLockBusy),
+			"duration_ms", float64(time.Since(started))/float64(time.Millisecond), "error", lockErr)
+		telemetry.FinishSpan(span, lockErr)
+	}()
 	if conn == nil {
 		return nil, ErrNilTargetConn
 	}
