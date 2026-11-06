@@ -126,6 +126,10 @@ func (m *Manager) describe(ctx context.Context, actor contracts.UserID, id contr
 	return DatabaseChoice{ID: id, Name: r.Name, Level: level}, nil
 }
 
+func (m *Manager) Describe(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID) (DatabaseChoice, error) {
+	return m.describe(ctx, actor, id, contracts.ActionViewSchema)
+}
+
 type Viewer struct {
 	authorizer contracts.Authorizer
 	provider   contracts.DatabaseProvider

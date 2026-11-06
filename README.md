@@ -123,6 +123,19 @@ web/static/          File CSS statis
 
 > **Catatan akses**: Platform Admin mengelola pengguna, grup, dan daftar koneksi database, tetapi tidak otomatis bisa melihat isi database target kecuali akunnya tergabung ke dalam grup yang memiliki akses ke database tersebut. Jika seorang pengguna tergabung di beberapa grup, hak akses tertinggi (`View + Edit` > `View Only`) yang berlaku.
 
+### API JSON database (M2-A03)
+
+Semua route berikut memerlukan sesi; perubahan data memerlukan header `X-CSRF-Token`. Respons memakai envelope `data` atau `error`, dan ID dikirim sebagai string.
+
+| Route `/api/v1` | Akses | Fungsi |
+| :--- | :--- | :--- |
+| `GET/POST /connections`, `GET/PATCH/DELETE /connections/{id}` | Platform Admin | Kelola metadata koneksi; password hanya diterima pada request, tidak dikembalikan. `PATCH` mengirim seluruh metadata dan boleh menghilangkan password untuk mempertahankan password lama. |
+| `POST /connections/{id}/test` | Platform Admin | Ping koneksi tersimpan tanpa menjalankan SQL migration. |
+| `GET /databases`, `GET /databases/{id}` | Pengguna dengan grant | Daftar dan detail nama target beserta level akses, tanpa host atau kredensial. |
+| `GET /databases/{id}/schemas`, `/tables?schema=...`, `/table?schema=...&table=...` | `View Only` / `View + Edit` | Jelajahi struktur target. |
+| `GET /databases/{id}/data?schema=...&table=...&page=1` | `View Only` / `View + Edit` | Data read-only, maksimum 50 baris per halaman; null dan nilai terpotong diberi penanda eksplisit. |
+| `GET /databases/{id}/schema-diff?reference_schema=...&target_schema=...` | `View Only` / `View + Edit` | Pratinjau perubahan dan SQL hasil perbandingan; tidak mengeksekusi SQL atau membuat draft. |
+
 ## Pengujian (Testing)
 
 Untuk menjalankan seluruh unit test:

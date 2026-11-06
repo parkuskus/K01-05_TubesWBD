@@ -85,11 +85,23 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure platform API: %w", err)
 	}
+	viewer, err := database.NewViewer(platformService, dbManager)
+	if err != nil {
+		return fmt.Errorf("configure database viewer: %w", err)
+	}
+	databaseAPI, err := api.NewDatabaseHandler(dbManager, viewer, platformService, sessions)
+	if err != nil {
+		return fmt.Errorf("configure database API: %w", err)
+	}
 	apiRoutes := http.NewServeMux()
 	apiRoutes.Handle("/api/v1/users", platformAPI)
 	apiRoutes.Handle("/api/v1/users/", platformAPI)
 	apiRoutes.Handle("/api/v1/groups", platformAPI)
 	apiRoutes.Handle("/api/v1/groups/", platformAPI)
+	apiRoutes.Handle("/api/v1/connections", databaseAPI)
+	apiRoutes.Handle("/api/v1/connections/", databaseAPI)
+	apiRoutes.Handle("/api/v1/databases", databaseAPI)
+	apiRoutes.Handle("/api/v1/databases/", databaseAPI)
 	apiRoutes.Handle("/api/", apiHandler)
 	handler, err := web.New(web.Config{
 		Authenticator:   authenticator,
