@@ -87,10 +87,14 @@ func (s *Service) Create(ctx context.Context, actor contracts.UserID, id contrac
 	if err := insertRevision(ctx, tx, definitionID, 1, in, checksum(id, connectionRevision, in)); err != nil {
 		return Definition{}, err
 	}
+	created, err := scan(tx.QueryRowContext(ctx, `SELECT `+fields+joined+` WHERE d.database_id=$1 AND d.id=$2`, id, definitionID))
+	if err != nil {
+		return Definition{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Definition{}, storeError(err)
 	}
-	return s.Get(ctx, actor, id, definitionID)
+	return created, nil
 }
 
 func insertRevision(ctx context.Context, tx *sql.Tx, id string, revision int, in Input, hash string) error {
@@ -139,10 +143,14 @@ func (s *Service) Revise(ctx context.Context, actor contracts.UserID, id contrac
 	if _, err := tx.ExecContext(ctx, `UPDATE migration_definitions SET title=$2,current_revision=$3,updated_at=NOW() WHERE id=$1`, definitionID, in.Title, revision+1); err != nil {
 		return Definition{}, storeError(err)
 	}
+	revised, err := scan(tx.QueryRowContext(ctx, `SELECT `+fields+joined+` WHERE d.database_id=$1 AND d.id=$2`, id, definitionID))
+	if err != nil {
+		return Definition{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Definition{}, storeError(err)
 	}
-	return s.Get(ctx, actor, id, definitionID)
+	return revised, nil
 }
 
 func (s *Service) List(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID) ([]Definition, error) {

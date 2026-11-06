@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -198,5 +199,29 @@ func TestPostgresDefinitionBatchChecksumUsesStoredPlan(t *testing.T) {
 	}
 	if a.Checksum != b.Checksum {
 		t.Fatalf("equivalent persisted plans have different checksums: %s, %s", a.Checksum, b.Checksum)
+	}
+}
+
+type denyAfterFirstAuthorization struct {
+	contracts.Authorizer
+	calls atomic.Int32
+}
+
+func (a *denyAfterFirstAuthorization) RequireDatabaseAccess(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID, action contracts.DatabaseAction) error {
+	if a.calls.Add(1) > 1 {
+		return contracts.ErrForbidden
+	}
+	return a.Authorizer.RequireDatabaseAccess(ctx, actor, id, action)
+}
+
+func TestPostgresCreateReturnsCommittedDefinitionIfGrantChanges(t *testing.T) {
+	db, _, id, actor := definitionFixture(t)
+	service, err := definition.NewService(db, &denyAfterFirstAuthorization{Authorizer: platform.NewService(db)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(context.Background(), actor, id, definition.Input{Title: "Once", UpSQL: "SELECT 1", DownSQL: "SELECT 2", Mode: "NORMAL"})
+	if err != nil || created.ID == "" {
+		t.Fatalf("create after successful authorization: result=%+v err=%v", created, err)
 	}
 }
