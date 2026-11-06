@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
-	"database/sql"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/api"
 	"if3110.local/db-platform/internal/auth"
@@ -16,21 +18,34 @@ import (
 	"if3110.local/db-platform/internal/database"
 	"if3110.local/db-platform/internal/migration"
 	"if3110.local/db-platform/internal/platform"
+	"if3110.local/db-platform/internal/telemetry"
 	"if3110.local/db-platform/internal/web"
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("web.stopped", "status", "FAILED", "error", err)
+		os.Exit(1)
 	}
 }
 
 func run() error {
+	shutdown, err := telemetry.Setup("teras-data-web", os.Stdout, os.Stderr)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			slog.Error("telemetry.shutdown_failed", "error", err)
+		}
+	}()
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("pgx", cfg.PlatformDatabaseURL)
+	db, err := telemetry.OpenPlatform(cfg.PlatformDatabaseURL)
 	if err != nil {
 		return fmt.Errorf("open platform database: %w", err)
 	}
@@ -82,6 +97,26 @@ func run() error {
 		return fmt.Errorf("configure web routes: %w", err)
 	}
 
-	log.Printf("listening on :%s", cfg.Port)
-	return http.ListenAndServe(":"+cfg.Port, handler)
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe() }()
+	slog.Info("web.started", "port", cfg.Port, "status", "RUNNING")
+	select {
+	case err := <-done:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-runCtx.Done():
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			_ = server.Close()
+			return err
+		}
+		slog.Info("web.stopped", "status", "SUCCESS")
+		return nil
+	}
 }

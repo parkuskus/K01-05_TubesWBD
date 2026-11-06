@@ -2,28 +2,40 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/config"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("migrate.stopped", "status", "FAILED", "error", err)
+		os.Exit(1)
 	}
 }
 
 func run() error {
+	shutdown, err := telemetry.Setup("teras-data-migrate", os.Stdout, os.Stderr)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			slog.Error("telemetry.shutdown_failed", "error", err)
+		}
+	}()
 	dsn, err := config.LoadPlatformDatabaseURL()
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("pgx", dsn)
+	db, err := telemetry.OpenPlatform(dsn)
 	if err != nil {
 		return fmt.Errorf("open platform database: %w", err)
 	}
@@ -50,7 +62,7 @@ func run() error {
 	if len(embedded) > 0 {
 		latestVersion = embedded[len(embedded)-1].Version
 	}
-	log.Printf("platform migrations up to date (%d total, latest version %s)", len(embedded), latestVersion)
+	slog.Info("migrate.completed", "status", "SUCCESS", "total", len(embedded), "latest_version", latestVersion)
 	return nil
 }
 
