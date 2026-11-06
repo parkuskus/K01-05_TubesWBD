@@ -171,6 +171,74 @@ func TestLeaderSchemaAndPolicyVersion(t *testing.T) {
 	}
 }
 
+func TestPolicyVersionTracksMembershipAndGrantReassignment(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	first, err := s.CreateUser(ctx, admin, "first", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.CreateUser(ctx, admin, "second", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "Ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, first, group, true); err != nil {
+		t.Fatal(err)
+	}
+	var databaseOne, databaseTwo int64
+	for _, target := range []struct {
+		name string
+		id   *int64
+	}{{"one", &databaseOne}, {"two", &databaseTwo}} {
+		if err := db.QueryRowContext(ctx, `INSERT INTO database_connections (name,host,port,database_name,username,ssl_mode,password_ciphertext) VALUES ($1,'localhost',5432,'target','tester','disable',$2) RETURNING id`, target.name, make([]byte, 29)).Scan(target.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetGrant(ctx, admin, group, contracts.DatabaseID(strconv.FormatInt(databaseOne, 10)), contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.PolicyVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_memberships SET user_id=$3 WHERE group_id=$1 AND user_id=$2`, group, first, second); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.PolicyVersion(ctx)
+	if err != nil || after != before+1 {
+		t.Fatalf("membership moved without invalidation: %d -> %d (%v)", before, after, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_database_access SET database_id=$3 WHERE group_id=$1 AND database_id=$2`, group, databaseOne, databaseTwo); err != nil {
+		t.Fatal(err)
+	}
+	afterGrant, err := s.PolicyVersion(ctx)
+	if err != nil || afterGrant != after+1 {
+		t.Fatalf("grant moved without invalidation: %d -> %d (%v)", after, afterGrant, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_memberships SET user_id=user_id WHERE group_id=$1`, group); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_database_access SET level=level WHERE group_id=$1`, group); err != nil {
+		t.Fatal(err)
+	}
+	if unchanged, err := s.PolicyVersion(ctx); err != nil || unchanged != afterGrant {
+		t.Fatalf("no-op changed policy: %d -> %d (%v)", afterGrant, unchanged, err)
+	}
+}
+
 func TestGroupLeaderServiceGuardsMembershipAndUserDeletion(t *testing.T) {
 	db := platformTestDB(t)
 	ctx := context.Background()
