@@ -10,12 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.opentelemetry.io/otel/trace"
 	"if3110.local/db-platform/internal/contracts"
+	"if3110.local/db-platform/internal/telemetry"
 )
 
 const jobColumns = `
@@ -123,7 +126,7 @@ func (a PublisherAdapter) Publish(ctx context.Context, req contracts.EnqueueJobR
 // If a job with the same (actor_id, database_id, idempotency_key) already exists:
 //   - If its idempotency_hash matches the incoming payload, Publish returns the existing Job.
 //   - If its idempotency_hash differs, Publish returns ErrIdempotencyConflict.
-func (s *PostgresJobStore) Publish(ctx context.Context, in PublishInput) (Job, error) {
+func (s *PostgresJobStore) Publish(ctx context.Context, in PublishInput) (published Job, publishErr error) {
 	if s == nil || s.db == nil {
 		return Job{}, errors.New("job store database is required")
 	}
@@ -131,6 +134,27 @@ func (s *PostgresJobStore) Publish(ctx context.Context, in PublishInput) (Job, e
 	if err := in.Validate(); err != nil {
 		return Job{}, err
 	}
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		ctx = telemetry.Extract(ctx, in.TraceCarrier)
+	}
+	if telemetry.ContextFields(ctx).RequestID == "" {
+		ctx = telemetry.Extract(ctx, nil)
+	}
+	ctx = telemetry.WithFields(ctx, telemetry.Fields{
+		ActorID: string(in.Plan.ActorID), DatabaseID: string(in.Plan.TargetDatabaseID),
+		MigrationID: string(in.Plan.MigrationID), RevisionID: string(in.Plan.RevisionID),
+		ExecutionID: string(in.Plan.ExecutionID), Direction: string(in.Plan.Direction),
+	})
+	ctx, span := telemetry.StartSpan(ctx, "queue.publish", trace.WithSpanKind(trace.SpanKindProducer))
+	defer func() {
+		status, level := "SUCCESS", slog.LevelInfo
+		if publishErr != nil {
+			status, level = "FAILED", slog.LevelError
+		}
+		slog.LogAttrs(ctx, level, "queue.publish.result", slog.String("status", status),
+			slog.String("job_id", string(published.ID)), slog.Any("error", publishErr))
+		telemetry.FinishSpan(span, publishErr)
+	}()
 
 	plan := in.Plan
 	if strings.TrimSpace(plan.PlanChecksum) == "" {
@@ -148,12 +172,7 @@ func (s *PostgresJobStore) Publish(ctx context.Context, in PublishInput) (Job, e
 		return Job{}, fmt.Errorf("marshal execution plan: %w", err)
 	}
 
-	carrier := make(map[string]string, len(in.TraceCarrier))
-	for k, v := range in.TraceCarrier {
-		if trimmedKey := strings.TrimSpace(k); trimmedKey != "" {
-			carrier[trimmedKey] = v
-		}
-	}
+	carrier := telemetry.Inject(ctx)
 	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
 		return Job{}, fmt.Errorf("marshal trace carrier: %w", err)
