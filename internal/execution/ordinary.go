@@ -225,11 +225,12 @@ func (e *OrdinaryExecutor) Execute(ctx context.Context, env ExecutionEnv) (Execu
 	if execErr != nil {
 		_ = tx.Rollback()
 		return ExecutionResult{
-			JobStatus:     contracts.JobStatusFailed,
-			AttemptStatus: contracts.AttemptStatusRolledBack,
-			ExecutedSQL:   sqlToRun,
-			ErrorCode:     extractSQLState(execErr, "SQL_EXECUTION_ERROR"),
-			ErrorMessage:  SanitizeExecutionError(execErr),
+			JobStatus:          contracts.JobStatusFailed,
+			AttemptStatus:      contracts.AttemptStatusRolledBack,
+			ExecutedSQL:        sqlToRun,
+			ErrorCode:          extractSQLState(execErr, "SQL_EXECUTION_ERROR"),
+			ErrorMessage:       SanitizeExecutionError(execErr),
+			TransientRetryable: IsTransientPreCommitError(execErr),
 		}, nil
 	}
 
@@ -361,13 +362,33 @@ func (e *OrdinaryExecutor) Execute(ctx context.Context, env ExecutionEnv) (Execu
 	}
 
 	if err := tx.Commit(); err != nil {
-		return ExecutionResult{
-			JobStatus:     contracts.JobStatusUnknown,
-			AttemptStatus: contracts.AttemptStatusUnknown,
-			ExecutedSQL:   sqlToRun,
-			ErrorCode:     extractSQLState(err, "COMMIT_UNKNOWN"),
-			ErrorMessage:  SanitizeExecutionError(err),
-		}, nil
+		switch ClassifyCommitError(err) {
+		case ErrorCategoryPermanent:
+			return ExecutionResult{
+				JobStatus:     contracts.JobStatusFailed,
+				AttemptStatus: contracts.AttemptStatusRolledBack,
+				ExecutedSQL:   sqlToRun,
+				ErrorCode:     extractSQLState(err, "COMMIT_FAILED"),
+				ErrorMessage:  SanitizeExecutionError(err),
+			}, nil
+		case ErrorCategoryTransient:
+			return ExecutionResult{
+				JobStatus:          contracts.JobStatusFailed,
+				AttemptStatus:      contracts.AttemptStatusRolledBack,
+				ExecutedSQL:        sqlToRun,
+				ErrorCode:          extractSQLState(err, "COMMIT_RETRYABLE"),
+				ErrorMessage:       SanitizeExecutionError(err),
+				TransientRetryable: true,
+			}, nil
+		default:
+			return ExecutionResult{
+				JobStatus:     contracts.JobStatusUnknown,
+				AttemptStatus: contracts.AttemptStatusUnknown,
+				ExecutedSQL:   sqlToRun,
+				ErrorCode:     extractSQLState(err, "COMMIT_UNKNOWN"),
+				ErrorMessage:  SanitizeExecutionError(err),
+			}, nil
+		}
 	}
 
 	return ExecutionResult{
