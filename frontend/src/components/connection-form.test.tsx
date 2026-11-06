@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import { createApiClient } from "@/lib/api/client";
 import { ConnectionForm } from "./connection-form";
+import type { Connection } from "@/lib/api/databases";
 
 afterEach(() => {
   cleanup();
@@ -135,4 +136,42 @@ it("keeps unstructured connection failures generic", async () => {
     "Koneksi belum dapat disimpan. Periksa isian dan coba lagi.",
   );
   expect(screen.queryByText(/private-password/)).toBeNull();
+});
+
+const connection: Connection = {
+  id: "1",
+  name: "Inventory",
+  host: "localhost",
+  port: 5432,
+  database: "inventory",
+  username: "developer",
+  sslmode: "verify-full",
+};
+
+it("leaves the edit password empty and omits it to preserve the stored credential", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(<ConnectionForm initial={connection} onSubmit={onSubmit} />);
+  const password = screen.getByLabelText("Password") as HTMLInputElement;
+  expect(password.value).toBe("");
+  expect(password.required).toBe(false);
+  expect((screen.getByLabelText("Username") as HTMLInputElement).required).toBe(true);
+  expect(screen.getByText("Kosongkan untuk mempertahankan password tersimpan.")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Simpan koneksi" }));
+  expect(onSubmit).toHaveBeenCalledWith({
+    name: "Inventory",
+    host: "localhost",
+    port: 5432,
+    database: "inventory",
+    username: "developer",
+    sslmode: "verify-full",
+  });
+});
+
+it("sends a replacement password only when the administrator enters one", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(<ConnectionForm initial={connection} onSubmit={onSubmit} />);
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("Password"), "replacement");
+  await user.click(screen.getByRole("button", { name: "Simpan koneksi" }));
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ password: "replacement" }));
 });
