@@ -16,6 +16,9 @@ type postgresRepository struct{ db *sql.DB }
 func dbError(err error) error {
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) {
+		if pg.Code == "23503" && pg.ConstraintName == "groups_leader_membership_fk" {
+			return ErrConflict
+		}
 		switch pg.Code {
 		case "23505":
 			return ErrConflict
@@ -195,7 +198,7 @@ func (p *postgresRepository) listGroups(ctx context.Context, actor int64) ([]Gro
 	if err := requireAdmin(ctx, tx, actor); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, name FROM groups ORDER BY id`)
+	rows, err := tx.QueryContext(ctx, `SELECT id, name, leader_user_id FROM groups ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -203,11 +206,16 @@ func (p *postgresRepository) listGroups(ctx context.Context, actor int64) ([]Gro
 	for rows.Next() {
 		var group Group
 		var id int64
-		if err := rows.Scan(&id, &group.Name); err != nil {
+		var leader sql.NullInt64
+		if err := rows.Scan(&id, &group.Name, &leader); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		group.ID = contracts.GroupID(strconv.FormatInt(id, 10))
+		if leader.Valid {
+			v := contracts.UserID(strconv.FormatInt(leader.Int64, 10))
+			group.LeaderUserID = &v
+		}
 		groups = append(groups, group)
 	}
 	err = rows.Err()
@@ -219,6 +227,32 @@ func (p *postgresRepository) listGroups(ctx context.Context, actor int64) ([]Gro
 		return nil, err
 	}
 	return groups, nil
+}
+
+func (p *postgresRepository) setLeader(ctx context.Context, actor, group, leader int64) error {
+	return p.mutate(ctx, actor, func(tx *sql.Tx) error {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM groups WHERE id=$1)`, group).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrNotFound
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM group_memberships WHERE group_id=$1 AND user_id=$2)`, group, leader).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrConflict
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE groups SET leader_user_id=$2 WHERE id=$1 AND leader_user_id IS DISTINCT FROM $2`, group, leader)
+		return err
+	})
+}
+
+func (p *postgresRepository) policyVersion(ctx context.Context) (int64, error) {
+	var n int64
+	err := p.db.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true`).Scan(&n)
+	return n, err
 }
 
 func (p *postgresRepository) createGroup(ctx context.Context, actor int64, name string) (contracts.GroupID, error) {

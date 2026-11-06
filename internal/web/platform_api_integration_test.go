@@ -127,6 +127,15 @@ func TestPostgresPlatformAPI(t *testing.T) {
 	if w := client.get("/api/v1/groups/" + grp.Data.ID + "/grants"); w.Code != 200 || !strings.Contains(w.Body.String(), `"grants":[]`) {
 		t.Fatalf("removed grant: %d %s", w.Code, w.Body.String())
 	}
+	leaderPath := "/api/v1/groups/" + grp.Data.ID + "/leader"
+	check(request("PUT", leaderPath, `{"user_id":"`+user.Data.ID+`"}`, bootstrap.Data.Token, "http://localhost:3000"), 409)
+	check(request("PUT", memberPath, "", bootstrap.Data.Token, "http://localhost:3000"), 204)
+	check(request("PUT", leaderPath, `{"user_id":"`+user.Data.ID+`"}`, "", "http://localhost:3000"), 403)
+	check(request("PUT", leaderPath, `{"user_id":"`+user.Data.ID+`"}`, bootstrap.Data.Token, "http://localhost:3000"), 204)
+	if w := client.get("/api/v1/groups/" + grp.Data.ID); w.Code != 200 || !strings.Contains(w.Body.String(), `"leader_user_id":"`+user.Data.ID+`"`) {
+		t.Fatalf("leader response: %d %s", w.Code, w.Body.String())
+	}
+	check(request("DELETE", memberPath, "", bootstrap.Data.Token, "http://localhost:3000"), 409)
 	// Keep a second active session for the target user and verify password rotation revokes it.
 	other := newTestClient(t, handler)
 	other.cookies = make(map[string]*http.Cookie)

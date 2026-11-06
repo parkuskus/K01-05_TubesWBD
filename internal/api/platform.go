@@ -25,6 +25,7 @@ type PlatformService interface {
 	SetPlatformAdmin(context.Context, contracts.UserID, contracts.UserID, bool) error
 	DeleteUser(context.Context, contracts.UserID, contracts.UserID) error
 	ListGroups(context.Context, contracts.UserID) ([]platform.Group, error)
+	SetGroupLeader(context.Context, contracts.UserID, contracts.GroupID, contracts.UserID) error
 	CreateGroup(context.Context, contracts.UserID, string) (contracts.GroupID, error)
 	RenameGroup(context.Context, contracts.UserID, contracts.GroupID, string) error
 	DeleteGroup(context.Context, contracts.UserID, contracts.GroupID) error
@@ -59,8 +60,9 @@ type apiUser struct {
 	IsPlatformAdmin bool             `json:"is_platform_admin"`
 }
 type apiGroup struct {
-	ID   contracts.GroupID `json:"id"`
-	Name string            `json:"name"`
+	ID           contracts.GroupID `json:"id"`
+	Name         string            `json:"name"`
+	LeaderUserID *contracts.UserID `json:"leader_user_id"`
 }
 type apiGrant struct {
 	GroupID    contracts.GroupID     `json:"group_id"`
@@ -201,7 +203,7 @@ func (h *platformHandler) groups(w http.ResponseWriter, r *http.Request, actor c
 			}
 			out := make([]apiGroup, 0, len(groups))
 			for _, g := range groups {
-				out = append(out, apiGroup{g.ID, g.Name})
+				out = append(out, apiGroup{g.ID, g.Name, g.LeaderUserID})
 			}
 			writeData(w, struct {
 				Groups []apiGroup `json:"groups"`
@@ -237,6 +239,28 @@ func (h *platformHandler) groups(w http.ResponseWriter, r *http.Request, actor c
 		return
 	}
 	group := contracts.GroupID(parts[1])
+	if len(parts) == 3 && parts[2] == "leader" {
+		if r.Method != http.MethodPut {
+			methodNotAllowed(w, "PUT")
+			return
+		}
+		var input struct {
+			UserID string `json:"user_id"`
+		}
+		if !decodePlatform(w, r, &input) {
+			return
+		}
+		if !validID(input.UserID) {
+			WriteError(w, 400, "INVALID_REQUEST", "ID leader tidak valid.")
+			return
+		}
+		if err := h.service.SetGroupLeader(ctx, actor, group, contracts.UserID(input.UserID)); err != nil {
+			h.fail(w, err)
+			return
+		}
+		w.WriteHeader(204)
+		return
+	}
 	if len(parts) == 2 {
 		var err error
 		switch r.Method {
@@ -250,7 +274,7 @@ func (h *platformHandler) groups(w http.ResponseWriter, r *http.Request, actor c
 				if item.ID == group {
 					writeData(w, struct {
 						Group apiGroup `json:"group"`
-					}{apiGroup{item.ID, item.Name}})
+					}{apiGroup{item.ID, item.Name, item.LeaderUserID}})
 					return
 				}
 			}

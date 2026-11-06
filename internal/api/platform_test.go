@@ -27,6 +27,10 @@ func (f *platformFixture) ListGroups(context.Context, contracts.UserID) ([]platf
 	f.calls = append(f.calls, "groups")
 	return []platform.Group{{ID: "3", Name: "Ops"}}, f.err
 }
+func (f *platformFixture) SetGroupLeader(_ context.Context, actor contracts.UserID, group contracts.GroupID, leader contracts.UserID) error {
+	f.calls = append(f.calls, "leader:"+string(actor)+":"+string(group)+":"+string(leader))
+	return f.err
+}
 func (f *platformFixture) ListMembers(context.Context, contracts.UserID, contracts.GroupID) ([]platform.User, error) {
 	f.calls = append(f.calls, "members")
 	return nil, f.err
@@ -124,7 +128,7 @@ func TestPlatformAPIReadRoutes(t *testing.T) {
 	}
 	f := &platformFixture{}
 	detail := platformRequest(t, f, platformAuthz{}, "1", "GET", "/api/v1/groups/3", "")
-	if detail.Code != 200 || !strings.Contains(detail.Body.String(), `"group":{"id":"3","name":"Ops"}`) {
+	if detail.Code != 200 || !strings.Contains(detail.Body.String(), `"group":{"id":"3","name":"Ops","leader_user_id":null}`) {
 		t.Fatalf("group detail: %d %s", detail.Code, detail.Body.String())
 	}
 	f = &platformFixture{}
@@ -147,6 +151,46 @@ func TestPlatformAPIReadRoutes(t *testing.T) {
 		if w.Code != tc.want || len(f.calls) != 0 {
 			t.Fatalf("denied %d calls=%v", w.Code, f.calls)
 		}
+	}
+}
+
+func TestPlatformAPIGroupLeader(t *testing.T) {
+	f := &platformFixture{}
+	w := platformRequest(t, f, platformAuthz{}, "1", "PUT", "/api/v1/groups/3/leader", `{"user_id":"5"}`)
+	if w.Code != 204 || len(f.calls) != 1 || f.calls[0] != "leader:1:3:5" {
+		t.Fatalf("set leader: %d %s calls=%v", w.Code, w.Body.String(), f.calls)
+	}
+	for _, tc := range []struct {
+		path, body string
+		want       int
+	}{
+		{"/api/v1/groups/0/leader", `{"user_id":"5"}`, 400},
+		{"/api/v1/groups/3/leader", `{"user_id":"0"}`, 400},
+		{"/api/v1/groups/3/leader", `{"user_id":"abc"}`, 400},
+		{"/api/v1/groups/3/leader", `{"user_id":"5","actor_id":"1"}`, 400},
+		{"/api/v1/groups/3/leader", `{"user_id":null}`, 400},
+		{"/api/v1/groups/3/leader", `{}`, 400},
+	} {
+		f := &platformFixture{}
+		w := platformRequest(t, f, platformAuthz{}, "1", "PUT", tc.path, tc.body)
+		if w.Code != tc.want || len(f.calls) != 0 {
+			t.Fatalf("unsafe leader: %d %s calls=%v", w.Code, w.Body.String(), f.calls)
+		}
+	}
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{{platform.ErrNotFound, 404}, {platform.ErrConflict, 409}, {contracts.ErrForbidden, 403}} {
+		f := &platformFixture{err: tc.err}
+		w := platformRequest(t, f, platformAuthz{}, "1", "PUT", "/api/v1/groups/3/leader", `{"user_id":"5"}`)
+		if w.Code != tc.want {
+			t.Fatalf("service error %v: %d", tc.err, w.Code)
+		}
+	}
+	f = &platformFixture{}
+	w = platformRequest(t, f, platformAuthz{err: contracts.ErrForbidden}, "5", "PUT", "/api/v1/groups/3/leader", `{"user_id":"5"}`)
+	if w.Code != 403 || len(f.calls) != 0 {
+		t.Fatalf("non-admin leader: %d calls=%v", w.Code, f.calls)
 	}
 }
 

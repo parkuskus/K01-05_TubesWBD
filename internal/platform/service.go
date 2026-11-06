@@ -28,6 +28,8 @@ type userRepository interface {
 
 type groupRepository interface {
 	listGroups(context.Context, int64) ([]Group, error)
+	setLeader(context.Context, int64, int64, int64) error
+	policyVersion(context.Context) (int64, error)
 	createGroup(context.Context, int64, string) (contracts.GroupID, error)
 	renameGroup(context.Context, int64, int64, string) error
 	deleteGroup(context.Context, int64, int64) error
@@ -165,6 +167,28 @@ func (s *Service) ListGroups(ctx context.Context, actorID contracts.UserID) ([]G
 		return nil, err
 	}
 	return s.groups.listGroups(ctx, actor)
+}
+
+func (s *Service) SetGroupLeader(ctx context.Context, actorID contracts.UserID, groupID contracts.GroupID, leaderID contracts.UserID) error {
+	actor, err := positiveID(actorID)
+	if err != nil {
+		return err
+	}
+	group, err := positiveID(contracts.UserID(groupID))
+	if err != nil {
+		return err
+	}
+	leader, err := positiveID(leaderID)
+	if err != nil {
+		return err
+	}
+	return s.groups.setLeader(ctx, actor, group, leader)
+}
+
+// PolicyVersion is a snapshot; callers must recheck it during their own locked preflight.
+// shortcut: global version stales unrelated approvals; use per-target versions if A06 needs scoped invalidation.
+func (s *Service) PolicyVersion(ctx context.Context) (int64, error) {
+	return s.groups.policyVersion(ctx)
 }
 
 func (s *Service) CreateGroup(ctx context.Context, actorID contracts.UserID, name string) (contracts.GroupID, error) {

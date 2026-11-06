@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -65,6 +66,266 @@ func platformTestDB(t *testing.T) *sql.DB {
 		t.Fatal("could not apply platform migrations")
 	}
 	return db
+}
+
+func TestLeaderSchemaAndPolicyVersion(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	root, err := login.Authenticate(ctx, "root", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := s.CreateUser(ctx, root, "member", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, root, "Ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := func() int64 {
+		t.Helper()
+		var n int64
+		if err := db.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id = true`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := version(); n != 1 {
+		t.Fatalf("initial version %d", n)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE groups SET leader_user_id = $2 WHERE id = $1`, group, member); err == nil {
+		t.Fatal("nonmember appointed")
+	}
+	if n := version(); n != 1 {
+		t.Fatalf("failed leader change bumped policy: %d", n)
+	}
+	if err := s.SetMembership(ctx, root, member, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 2 {
+		t.Fatalf("membership version=%d", n)
+	}
+	if err := s.SetMembership(ctx, root, member, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 2 {
+		t.Fatalf("duplicate membership bumped policy: %d", n)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE groups SET leader_user_id = $2 WHERE id = $1`, group, member); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 3 {
+		t.Fatalf("leader version=%d", n)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE groups SET leader_user_id = $2 WHERE id = $1`, group, member); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 3 {
+		t.Fatalf("same leader bumped policy: %d", n)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2`, group, member); err == nil {
+		t.Fatal("leader membership deleted directly")
+	}
+	if n := version(); n != 3 {
+		t.Fatalf("failed deletion bumped policy: %d", n)
+	}
+	var dbID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO database_connections (name,host,port,database_name,username,ssl_mode,password_ciphertext) VALUES ('test','localhost',5432,'target','tester','disable',$1) RETURNING id`, make([]byte, 29)).Scan(&dbID); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 4 {
+		t.Fatalf("connection version=%d", n)
+	}
+	if err := s.SetGrant(ctx, root, group, contracts.DatabaseID(strconv.FormatInt(dbID, 10)), contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 5 {
+		t.Fatalf("grant version=%d", n)
+	}
+	if err := s.SetGrant(ctx, root, group, contracts.DatabaseID(strconv.FormatInt(dbID, 10)), contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 5 {
+		t.Fatalf("same grant bumped policy: %d", n)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE database_connections SET revision = revision + 1 WHERE id=$1`, dbID); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 6 {
+		t.Fatalf("revision version=%d", n)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE database_connections SET host='127.0.0.1' WHERE id=$1`, dbID); err != nil {
+		t.Fatal(err)
+	}
+	if n := version(); n != 7 {
+		t.Fatalf("direct connection identity change missed policy: %d", n)
+	}
+	if err := s.DeleteGroup(ctx, root, group); err != nil {
+		t.Fatalf("group deletion with leader: %v", err)
+	}
+}
+
+func TestPolicyVersionTracksMembershipAndGrantReassignment(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	first, err := s.CreateUser(ctx, admin, "first", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.CreateUser(ctx, admin, "second", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "Ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, first, group, true); err != nil {
+		t.Fatal(err)
+	}
+	var databaseOne, databaseTwo int64
+	for _, target := range []struct {
+		name string
+		id   *int64
+	}{{"one", &databaseOne}, {"two", &databaseTwo}} {
+		if err := db.QueryRowContext(ctx, `INSERT INTO database_connections (name,host,port,database_name,username,ssl_mode,password_ciphertext) VALUES ($1,'localhost',5432,'target','tester','disable',$2) RETURNING id`, target.name, make([]byte, 29)).Scan(target.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetGrant(ctx, admin, group, contracts.DatabaseID(strconv.FormatInt(databaseOne, 10)), contracts.AccessViewOnly); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.PolicyVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_memberships SET user_id=$3 WHERE group_id=$1 AND user_id=$2`, group, first, second); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.PolicyVersion(ctx)
+	if err != nil || after != before+1 {
+		t.Fatalf("membership moved without invalidation: %d -> %d (%v)", before, after, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_database_access SET database_id=$3 WHERE group_id=$1 AND database_id=$2`, group, databaseOne, databaseTwo); err != nil {
+		t.Fatal(err)
+	}
+	afterGrant, err := s.PolicyVersion(ctx)
+	if err != nil || afterGrant != after+1 {
+		t.Fatalf("grant moved without invalidation: %d -> %d (%v)", after, afterGrant, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_memberships SET user_id=user_id WHERE group_id=$1`, group); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE group_database_access SET level=level WHERE group_id=$1`, group); err != nil {
+		t.Fatal(err)
+	}
+	if unchanged, err := s.PolicyVersion(ctx); err != nil || unchanged != afterGrant {
+		t.Fatalf("no-op changed policy: %d -> %d (%v)", afterGrant, unchanged, err)
+	}
+}
+
+func TestGroupLeaderServiceGuardsMembershipAndUserDeletion(t *testing.T) {
+	db := platformTestDB(t)
+	ctx := context.Background()
+	login := auth.NewAuthenticator(db)
+	if err := login.EnsureInitialAdmin(ctx, "root", "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := login.Authenticate(ctx, "root", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := platform.NewService(db)
+	first, err := s.CreateUser(ctx, admin, "first", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.CreateUser(ctx, admin, "second", "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(ctx, admin, "Ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := s.PolicyVersion(ctx)
+	if err != nil || initial != 1 {
+		t.Fatalf("initial policy %d: %v", initial, err)
+	}
+	if err := s.SetGroupLeader(ctx, first, group, first); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("non-admin leader change: %v", err)
+	}
+	if err := s.SetGroupLeader(ctx, admin, group, first); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("nonmember leader: %v", err)
+	}
+	if err := s.SetGroupLeader(ctx, admin, "999999", first); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("missing group: %v", err)
+	}
+	if err := s.SetMembership(ctx, admin, first, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, second, group, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetGroupLeader(ctx, admin, group, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequireDatabaseAccess(ctx, first, "999999", contracts.ActionViewSchema); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("leader gained implicit target access: %v", err)
+	}
+	if err := s.RequirePlatformAdmin(ctx, first); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("leader gained platform admin: %v", err)
+	}
+	groupList, err := s.ListGroups(ctx, admin)
+	if err != nil || len(groupList) != 1 || groupList[0].LeaderUserID == nil || *groupList[0].LeaderUserID != first {
+		t.Fatalf("leader not listed: %v %v", groupList, err)
+	}
+	before, err := s.PolicyVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetGroupLeader(ctx, admin, group, first); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := s.PolicyVersion(ctx); after != before {
+		t.Fatalf("idempotent leader changed policy %d -> %d", before, after)
+	}
+	if err := s.SetMembership(ctx, admin, first, group, false); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("leader removed: %v", err)
+	}
+	if err := s.DeleteUser(ctx, admin, first); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("leader user deleted: %v", err)
+	}
+	if after, _ := s.PolicyVersion(ctx); after != before {
+		t.Fatalf("failed change bumped policy %d -> %d", before, after)
+	}
+	if err := s.SetGroupLeader(ctx, admin, group, second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, first, group, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(ctx, admin, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMembership(ctx, admin, second, group, false); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("replacement leader removed: %v", err)
+	}
 }
 
 func TestRequirePlatformAdminReadsCurrentRole(t *testing.T) {
