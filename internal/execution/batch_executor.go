@@ -8,12 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"if3110.local/db-platform/internal/contracts"
 	"if3110.local/db-platform/internal/jobs"
 )
 
-var ErrInvalidBatchUpdateSQL = errors.New("batch migration SQL must be a single UPDATE statement")
+var ErrInvalidBatchUpdateSQL = errors.New("batch migration SQL must be a single schema-qualified UPDATE matching the batch table")
 
 // JobProgressUpdater updates real-time committed batch progress on the platform jobs table.
 type JobProgressUpdater interface {
@@ -35,10 +37,10 @@ type BatchPauseChecker func(ctx context.Context, jobID contracts.JobID, nextBatc
 // BatchExecutor orchestrates chunked keyset-paginated batch execution,
 // checkpointing, pause/resume, and partial failure gating on a target database.
 type BatchExecutor struct {
-	gates        GateStore
-	progress     JobProgressUpdater
-	shouldPause  BatchPauseChecker
-	now          func() time.Time
+	gates       GateStore
+	progress    JobProgressUpdater
+	shouldPause BatchPauseChecker
+	now         func() time.Time
 }
 
 // NewBatchExecutor creates a BatchExecutor with optional platform GateStore and
@@ -74,6 +76,9 @@ func BuildScopedBatchUpdateSQL(upSQL string, cfg contracts.BatchConfig) (string,
 	}
 	if err := cfg.Validate(); err != nil {
 		return "", err
+	}
+	if !batchUpdateTargetMatches(upSQL, cfg) {
+		return "", ErrInvalidBatchUpdateSQL
 	}
 	quotedPK, err := QuoteIdentifier(cfg.PrimaryKeyColumn)
 	if err != nil {
@@ -112,6 +117,86 @@ func BuildScopedBatchUpdateSQL(upSQL string, cfg contracts.BatchConfig) (string,
 	}
 
 	return fmt.Sprintf("%s WHERE %s", trimmed, batchFilter), nil
+}
+
+func batchUpdateTargetMatches(sql string, cfg contracts.BatchConfig) bool {
+	masked := maskLiteralsAndComments(strings.TrimSpace(sql))
+	i := 0
+	first, quoted, ok := readBatchSQLIdentifier(masked, &i)
+	if !ok || quoted || first != "update" {
+		return false
+	}
+	schema, quoted, ok := readBatchSQLIdentifier(masked, &i)
+	if !ok {
+		return false
+	}
+	if !quoted && schema == "only" {
+		schema, _, ok = readBatchSQLIdentifier(masked, &i)
+		if !ok {
+			return false
+		}
+	}
+	skipBatchSQLWhitespace(masked, &i)
+	if i >= len(masked) || masked[i] != '.' {
+		return false
+	}
+	i++
+	table, _, ok := readBatchSQLIdentifier(masked, &i)
+	if !ok || (i < len(masked) && !unicode.IsSpace(rune(masked[i]))) {
+		return false
+	}
+	return schema == cfg.TableSchema && table == cfg.TableName
+}
+
+func readBatchSQLIdentifier(sql string, i *int) (string, bool, bool) {
+	skipBatchSQLWhitespace(sql, i)
+	if *i >= len(sql) {
+		return "", false, false
+	}
+	if sql[*i] == '"' {
+		*i++
+		var identifier strings.Builder
+		for *i < len(sql) {
+			if sql[*i] == '"' {
+				if *i+1 < len(sql) && sql[*i+1] == '"' {
+					identifier.WriteByte('"')
+					*i += 2
+					continue
+				}
+				*i++
+				return identifier.String(), true, identifier.Len() > 0
+			}
+			identifier.WriteByte(sql[*i])
+			*i++
+		}
+		return "", true, false
+	}
+	start := *i
+	for *i < len(sql) {
+		r, size := utf8.DecodeRuneInString(sql[*i:])
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '$' {
+			break
+		}
+		*i += size
+	}
+	if start == *i {
+		return "", false, false
+	}
+	first, _ := utf8.DecodeRuneInString(sql[start:])
+	if unicode.IsDigit(first) || first == '$' {
+		return "", false, false
+	}
+	return strings.ToLower(sql[start:*i]), false, true
+}
+
+func skipBatchSQLWhitespace(sql string, i *int) {
+	for *i < len(sql) {
+		r, size := utf8.DecodeRuneInString(sql[*i:])
+		if !unicode.IsSpace(r) {
+			break
+		}
+		*i += size
+	}
 }
 
 // maskLiteralsAndComments replaces string literals and comments with spaces of
@@ -952,4 +1037,3 @@ func (e *BatchExecutor) finalizeBatchUp(
 		LastCommittedCursor: formatCursor(committedBatches, lastCursor),
 	}, nil
 }
-

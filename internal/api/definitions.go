@@ -16,6 +16,7 @@ type DefinitionService interface {
 	Get(context.Context, contracts.UserID, contracts.DatabaseID, string) (definition.Definition, error)
 	Create(context.Context, contracts.UserID, contracts.DatabaseID, definition.Input) (definition.Definition, error)
 	Revise(context.Context, contracts.UserID, contracts.DatabaseID, string, int, definition.Input) (definition.Definition, error)
+	Validate(context.Context, contracts.UserID, contracts.DatabaseID, string) (definition.ValidationReport, error)
 }
 
 type definitionHandler struct{ service DefinitionService }
@@ -41,11 +42,11 @@ func (h *definitionHandler) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")
-	if len(parts) < 3 || len(parts) > 4 || parts[0] != "databases" || parts[2] != "migrations" {
+	if len(parts) < 3 || len(parts) > 5 || parts[0] != "databases" || parts[2] != "migrations" {
 		WriteError(w, 404, "NOT_FOUND", "Endpoint tidak ditemukan.")
 		return
 	}
-	if !validID(parts[1]) || (len(parts) == 4 && !validID(parts[3])) {
+	if !validID(parts[1]) || (len(parts) >= 4 && !validID(parts[3])) {
 		WriteError(w, 400, "INVALID_REQUEST", "ID tidak valid.")
 		return
 	}
@@ -55,6 +56,25 @@ func (h *definitionHandler) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	id := contracts.DatabaseID(parts[1])
 	ctx := r.Context()
+	if len(parts) == 5 {
+		if parts[4] != "validate" {
+			WriteError(w, 404, "NOT_FOUND", "Endpoint tidak ditemukan.")
+			return
+		}
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, "POST")
+			return
+		}
+		report, err := h.service.Validate(ctx, actor, id, parts[3])
+		if err != nil {
+			h.fail(w, err)
+			return
+		}
+		writeData(w, struct {
+			Validation definition.ValidationReport `json:"validation"`
+		}{report})
+		return
+	}
 	if len(parts) == 3 {
 		switch r.Method {
 		case http.MethodGet:

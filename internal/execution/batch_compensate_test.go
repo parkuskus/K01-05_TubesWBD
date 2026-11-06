@@ -11,6 +11,13 @@ import (
 	"if3110.local/db-platform/internal/contracts"
 )
 
+func TestBuildBatchCompensateSQLRejectsMismatchedUpdateTarget(t *testing.T) {
+	cfg := contracts.BatchConfig{TableSchema: "public", TableName: "orders", PrimaryKeyColumn: "id", BatchSize: 10}
+	if _, err := BuildBatchCompensateSQL("UPDATE public.payments SET status = 'PENDING'", cfg); !errors.Is(err, ErrInvalidBatchUpdateSQL) {
+		t.Fatalf("mismatched compensation target error = %v, want ErrInvalidBatchUpdateSQL", err)
+	}
+}
+
 func TestBatchCompensateRevertsCommittedBatchesInReverseOrder(t *testing.T) {
 	// BATCH-04: Batch 1..2 committed before batch 3 failed; compensation reverts
 	// batch 2 then batch 1 in reverse order, clears PARTIAL gate, and keeps

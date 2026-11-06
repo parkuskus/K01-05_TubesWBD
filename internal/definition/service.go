@@ -183,6 +183,32 @@ func (s *Service) Get(ctx context.Context, actor contracts.UserID, id contracts.
 	return scan(s.db.QueryRowContext(ctx, `SELECT `+fields+joined+` WHERE d.database_id=$1 AND d.id=$2`, id, definitionID))
 }
 
+func (s *Service) Validate(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID, definitionID string) (ValidationReport, error) {
+	d, err := s.Get(ctx, actor, id, definitionID)
+	if err != nil {
+		return ValidationReport{}, err
+	}
+	report := ValidateInput(d.Input)
+	report.MigrationID = d.ID
+	report.Revision = d.Revision
+	report.Checksum = d.Checksum
+	if d.State != "DRAFT" {
+		report.Errors = append(report.Errors, ValidationIssue{Code: "INVALID_STATE", Message: "Only draft definitions can be validated for review."})
+	}
+	if d.Checksum != checksum(d.DatabaseID, d.ConnectionRevision, d.Input) {
+		report.Errors = append(report.Errors, ValidationIssue{Code: "CHECKSUM_MISMATCH", Message: "Stored definition checksum does not match its revision."})
+	}
+	var connectionRevision int64
+	if err := s.db.QueryRowContext(ctx, `SELECT revision FROM database_connections WHERE id=$1`, id).Scan(&connectionRevision); err != nil {
+		return ValidationReport{}, storeError(err)
+	}
+	if connectionRevision != d.ConnectionRevision {
+		report.Errors = append(report.Errors, ValidationIssue{Code: "STALE_CONNECTION_REVISION", Message: "Target connection changed after this definition was created; create a new draft."})
+	}
+	report.Valid = len(report.Errors) == 0
+	return report, nil
+}
+
 // MarkAttempted must commit before sending any plan to an executor, including attempts that fail.
 func (s *Service) MarkAttempted(ctx context.Context, definitionID string, revision int) error {
 	if !validID(definitionID) || revision < 1 {
