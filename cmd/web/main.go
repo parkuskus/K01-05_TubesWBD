@@ -16,6 +16,7 @@ import (
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
+	"if3110.local/db-platform/internal/definition"
 	"if3110.local/db-platform/internal/migration"
 	"if3110.local/db-platform/internal/platform"
 	"if3110.local/db-platform/internal/telemetry"
@@ -93,6 +94,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure database API: %w", err)
 	}
+	definitions, err := definition.NewService(db, platformService)
+	if err != nil {
+		return fmt.Errorf("configure migration definitions: %w", err)
+	}
+	definitionAPI, err := api.NewDefinitionHandler(definitions, sessions)
+	if err != nil {
+		return fmt.Errorf("configure definition API: %w", err)
+	}
 	apiRoutes := http.NewServeMux()
 	apiRoutes.Handle("/api/v1/users", platformAPI)
 	apiRoutes.Handle("/api/v1/users/", platformAPI)
@@ -102,6 +111,8 @@ func run() error {
 	apiRoutes.Handle("/api/v1/connections/", databaseAPI)
 	apiRoutes.Handle("/api/v1/databases", databaseAPI)
 	apiRoutes.Handle("/api/v1/databases/", databaseAPI)
+	apiRoutes.Handle("/api/v1/databases/{id}/migrations", definitionAPI)
+	apiRoutes.Handle("/api/v1/databases/{id}/migrations/", definitionAPI)
 	apiRoutes.Handle("/api/", apiHandler)
 	handler, err := web.New(web.Config{
 		Authenticator:   authenticator,

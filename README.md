@@ -136,6 +136,10 @@ Semua route berikut memerlukan sesi; perubahan data memerlukan header `X-CSRF-To
 | `GET /databases/{id}/data?schema=...&table=...&page=1` | `View Only` / `View + Edit` | Data read-only, maksimum 50 baris per halaman; null dan nilai terpotong diberi penanda eksplisit. |
 | `GET /databases/{id}/schema-diff?reference_schema=...&target_schema=...` | `View Only` / `View + Edit` | Pratinjau perubahan dan SQL hasil perbandingan; tidak mengeksekusi SQL atau membuat draft. |
 
+### Definisi migration M2 (M2-A04)
+
+`GET/POST /api/v1/databases/{id}/migrations` dan `GET/PATCH /api/v1/databases/{id}/migrations/{migrationId}` menyimpan draft M2 di **database platform**, terpisah dari riwayat migration M1 di database target. Pembacaan memerlukan grant target; pembuatan dan revisi memerlukan `View + Edit`. Mutasi tetap memerlukan sesi dan CSRF. Body `POST` berisi `title`, `up_sql`, `down_sql`, `irreversible`, `reason`, `mode` (`NORMAL`/`BATCH`), `batch_plan` (objek JSON untuk BATCH), dan `notes`. Body `PATCH` menambahkan `expected_revision` untuk menolak edit yang stale. Setiap revisi SQL append-only; percobaan eksekusi akan mengunci definisinya secara permanen. Menyimpan draft BATCH **tidak** berarti SQL batch sudah tervalidasi atau dapat dijalankan; validasi dan approval adalah tahap berikutnya.
+
 ## Pengujian (Testing)
 
 Untuk menjalankan seluruh unit test:
