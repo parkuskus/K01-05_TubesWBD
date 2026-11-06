@@ -31,6 +31,8 @@ func TestDefinitionInputValidation(t *testing.T) {
 		{Title: "A", UpSQL: "SELECT 1", Irreversible: true, Reason: "", Mode: "NORMAL"},
 		{Title: "A", UpSQL: "SELECT 1", DownSQL: "SELECT 2", Mode: "BATCH"},
 		{Title: "A", UpSQL: "SELECT 1", DownSQL: "SELECT 2", Mode: "NORMAL", BatchPlan: []byte(`{"batch_size":100}`)},
+		{Title: "A\x00B", UpSQL: "SELECT 1", DownSQL: "SELECT 2", Mode: "NORMAL"},
+		{Title: "A", UpSQL: "SELECT \x001", DownSQL: "SELECT 2", Mode: "NORMAL"},
 	} {
 		if err := input.Validate(); !errors.Is(err, definition.ErrInvalidInput) {
 			t.Fatalf("invalid input accepted: %+v: %v", input, err)

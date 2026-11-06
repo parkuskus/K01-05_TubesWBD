@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"if3110.local/db-platform/internal/contracts"
@@ -33,10 +34,11 @@ type Input struct {
 }
 
 func (in Input) Validate() error {
-	if len(strings.TrimSpace(in.Title)) == 0 || len(in.Title) > 200 || !utf8.ValidString(in.Title) ||
+	if len(strings.TrimSpace(in.Title)) == 0 || len(in.Title) > 200 || !utf8.ValidString(in.Title) || strings.IndexFunc(in.Title, unicode.IsControl) >= 0 ||
 		len(strings.TrimSpace(in.UpSQL)) == 0 || len(in.UpSQL) > 1048576 || !utf8.ValidString(in.UpSQL) ||
 		len(in.DownSQL) > 1048576 || !utf8.ValidString(in.DownSQL) || len(in.Reason) > 2000 || !utf8.ValidString(in.Reason) ||
 		len(in.Notes) > 8192 || !utf8.ValidString(in.Notes) ||
+		strings.ContainsRune(in.UpSQL, 0) || strings.ContainsRune(in.DownSQL, 0) || strings.ContainsRune(in.Reason, 0) || strings.ContainsRune(in.Notes, 0) ||
 		(in.Irreversible && (in.DownSQL != "" || strings.TrimSpace(in.Reason) == "")) ||
 		(!in.Irreversible && (strings.TrimSpace(in.DownSQL) == "" || in.Reason != "")) {
 		return ErrInvalidInput
@@ -85,6 +87,9 @@ func checksum(dbID contracts.DatabaseID, connectionRevision int64, in Input) str
 	if len(in.BatchPlan) == 0 {
 		in.BatchPlan = []byte(`{}`)
 	}
+	var plan map[string]json.RawMessage
+	_ = json.Unmarshal(in.BatchPlan, &plan) // Called only after Validate.
+	in.BatchPlan, _ = json.Marshal(plan)
 	// Encode values with boundaries rather than concatenating SQL fields.
 	data, _ := json.Marshal([]any{dbID, connectionRevision, in.Title, in.UpSQL, in.DownSQL, in.Irreversible, in.Reason, in.Mode, json.RawMessage(in.BatchPlan), in.Notes})
 	return fmt.Sprintf("%x", sha256.Sum256(data))

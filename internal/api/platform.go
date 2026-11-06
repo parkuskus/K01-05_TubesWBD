@@ -421,12 +421,16 @@ func (h *platformHandler) fail(w http.ResponseWriter, err error) {
 }
 
 func decodePlatform(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeJSON(w, r, dst, 16<<10)
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
 		WriteError(w, 415, "UNSUPPORTED_MEDIA_TYPE", "Gunakan format JSON.")
 		return false
 	}
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		WriteError(w, 413, "REQUEST_TOO_LARGE", "Permintaan terlalu besar.")
 		return false

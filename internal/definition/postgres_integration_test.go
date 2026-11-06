@@ -182,3 +182,21 @@ func TestPostgresDefinitionConcurrentVersions(t *testing.T) {
 		t.Fatalf("versions: %v", seen)
 	}
 }
+
+func TestPostgresDefinitionBatchChecksumUsesStoredPlan(t *testing.T) {
+	_, s, id, actor := definitionFixture(t)
+	base := definition.Input{Title: "Batch", UpSQL: "UPDATE items SET done=true", DownSQL: "UPDATE items SET done=false", Mode: "BATCH"}
+	base.BatchPlan = []byte(`{"batch_size":100,"schema":"public"}`)
+	a, err := s.Create(context.Background(), actor, id, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.BatchPlan = []byte(`{ "schema": "public", "batch_size": 100 }`)
+	b, err := s.Create(context.Background(), actor, id, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Checksum != b.Checksum {
+		t.Fatalf("equivalent persisted plans have different checksums: %s, %s", a.Checksum, b.Checksum)
+	}
+}
