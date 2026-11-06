@@ -83,10 +83,10 @@ func ValidateInput(in Input) ValidationReport {
 			} else if err := execution.ValidateScopeWhere(cfg.ScopeWhere); err != nil {
 				addError("INVALID_BATCH_SCOPE", "Batch scope must be a single safe WHERE predicate.")
 			} else if _, err := execution.BuildScopedBatchUpdateSQL(in.UpSQL, cfg); err != nil {
-				addError("INVALID_BATCH_SQL", "Batch up SQL must be a supported single UPDATE statement.")
+				addError("INVALID_BATCH_SQL", "Batch up SQL must be a single UPDATE targeting the configured schema and table.")
 			} else if !in.Irreversible {
 				if _, err := execution.BuildBatchCompensateSQL(in.DownSQL, cfg); err != nil {
-					addError("INVALID_BATCH_SQL", "Batch down SQL must be a supported compensation UPDATE statement.")
+					addError("INVALID_BATCH_SQL", "Batch down SQL must be a compensation UPDATE targeting the configured schema and table.")
 				}
 			}
 		}

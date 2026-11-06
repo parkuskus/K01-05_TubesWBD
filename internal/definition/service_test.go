@@ -64,8 +64,8 @@ func TestDefinitionValidationReport(t *testing.T) {
 		{
 			name: "batch update passes",
 			in: definition.Input{
-				Title: "Batch", UpSQL: "UPDATE users SET active = false WHERE active = true",
-				DownSQL: "UPDATE users SET active = true WHERE active = false", Mode: "BATCH",
+				Title: "Batch", UpSQL: "UPDATE public.users SET active = false WHERE active = true",
+				DownSQL: "UPDATE public.users SET active = true WHERE active = false", Mode: "BATCH",
 				BatchPlan: []byte(`{"table_schema":"public","table_name":"users","primary_key_column":"id","scope_where":"active = true","batch_size":100}`),
 			},
 		},
@@ -115,6 +115,14 @@ func TestDefinitionValidationReport(t *testing.T) {
 			name: "batch up SQL must be a supported update",
 			in: definition.Input{
 				Title: "Batch", UpSQL: "DELETE FROM users", DownSQL: "UPDATE users SET active = true", Mode: "BATCH",
+				BatchPlan: []byte(`{"table_schema":"public","table_name":"users","primary_key_column":"id","batch_size":100}`),
+			},
+			code: "INVALID_BATCH_SQL",
+		},
+		{
+			name: "batch update table must match frozen scope",
+			in: definition.Input{
+				Title: "Batch", UpSQL: "UPDATE public.payments SET active = false", DownSQL: "UPDATE public.payments SET active = true", Mode: "BATCH",
 				BatchPlan: []byte(`{"table_schema":"public","table_name":"users","primary_key_column":"id","batch_size":100}`),
 			},
 			code: "INVALID_BATCH_SQL",

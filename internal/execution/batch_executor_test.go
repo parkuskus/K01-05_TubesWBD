@@ -23,15 +23,15 @@ type fakeBatchRowData struct {
 }
 
 type fakeBatchEngineDB struct {
-	schemaReady   bool
-	tableRows     map[int64]fakeBatchRowData
-	scopes        map[string]BatchScopeRecord
-	scopeRows     map[string][]int64
-	checkpoints   map[string]BatchCheckpointRecord
-	recoveryRows  map[string]map[int][]BatchRecoveryRow
-	proofs        map[string]ExecutionCommitProof
-	history       []contracts.CommitHistoryEvent
-	head          contracts.ActiveHeadState
+	schemaReady           bool
+	tableRows             map[int64]fakeBatchRowData
+	scopes                map[string]BatchScopeRecord
+	scopeRows             map[string][]int64
+	checkpoints           map[string]BatchCheckpointRecord
+	recoveryRows          map[string]map[int][]BatchRecoveryRow
+	proofs                map[string]ExecutionCommitProof
+	history               []contracts.CommitHistoryEvent
+	head                  contracts.ActiveHeadState
 	txCommitCount         int
 	failOnBatchNo         int
 	failBatchErr          error
@@ -730,6 +730,17 @@ func TestBuildScopedBatchUpdateSQL(t *testing.T) {
 	}
 	if !strings.Contains(withoutWhere, "WHERE \"id\"::bigint IN (SELECT row_id FROM if3110_platform.batch_recovery_rows WHERE execution_id = $1 AND batch_no = $2)") {
 		t.Fatalf("unexpected rewritten SQL without WHERE: %s", withoutWhere)
+	}
+	if _, err := BuildScopedBatchUpdateSQL("UPDATE public.payments SET status = 'DONE'", cfg); !errors.Is(err, ErrInvalidBatchUpdateSQL) {
+		t.Fatalf("mismatched update target error = %v, want ErrInvalidBatchUpdateSQL", err)
+	}
+	for _, matching := range []string{
+		`UPDATE "public"."orders" AS o SET status = 'DONE'`,
+		"UPDATE ONLY public.orders SET status = 'DONE'",
+	} {
+		if _, err := BuildScopedBatchUpdateSQL(matching, cfg); err != nil {
+			t.Fatalf("matching update target %q rejected: %v", matching, err)
+		}
 	}
 
 	// Non-UPDATE or multi-statement SQL must be rejected.
