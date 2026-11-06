@@ -30,7 +30,7 @@ func TestPostgresUpgradeRetainsExistingPlatformData(t *testing.T) {
 	}
 	adminDB := stdlib.OpenDB(*config)
 	t.Cleanup(func() { _ = adminDB.Close() })
-	for _, previous := range []string{"0007", "0012"} {
+	for _, previous := range []string{"0007", "0012", "0014"} {
 		t.Run(previous, func(t *testing.T) {
 			var suffix [8]byte
 			if _, err := rand.Read(suffix[:]); err != nil {
@@ -87,11 +87,21 @@ func TestPostgresUpgradeRetainsExistingPlatformData(t *testing.T) {
 			if _, err := db.ExecContext(ctx, `INSERT INTO group_database_access(group_id,database_id,level) VALUES ($1,$2,2)`, groupID, databaseID); err != nil {
 				t.Fatal(err)
 			}
+			beforePolicy := int64(1)
+			if previous == "0014" {
+				if err := db.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true`).Scan(&beforePolicy); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := Apply(ctx, db); err != nil {
 				t.Fatalf("upgrade failed: %v", err)
 			}
 			if err := VerifyUpToDate(ctx, db); err != nil {
 				t.Fatalf("upgraded schema not current: %v", err)
+			}
+			var definitions sql.NullString
+			if err := db.QueryRowContext(ctx, `SELECT to_regclass('migration_definitions')::text`).Scan(&definitions); err != nil || !definitions.Valid {
+				t.Fatalf("definitions schema unavailable after upgrade: %v", err)
 			}
 			if err := Apply(ctx, db); err != nil {
 				t.Fatalf("repeat migration failed: %v", err)
@@ -111,7 +121,7 @@ func TestPostgresUpgradeRetainsExistingPlatformData(t *testing.T) {
 			if err := db.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if username != "old-user" || groupName != "old-group" || leader.Valid || level != 2 || version != 1 {
+			if username != "old-user" || groupName != "old-group" || leader.Valid || level != 2 || version != beforePolicy {
 				t.Fatalf("upgrade changed old data: user=%q group=%q leader=%v level=%d policy=%d", username, groupName, leader.Valid, level, version)
 			}
 		})
