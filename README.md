@@ -28,16 +28,26 @@ Dibuat untuk Tugas Besar Milestone 1 IF3110 Pengembangan Aplikasi Berbasis Web.
 ## Struktur Direktori
 
 ```text
-cmd/web/             Entrypoint server HTTP
+cmd/
+  migrate/           CLI migrasi schema database platform (versioned + SHA-256 checksum ledger)
+  seedbench/         Generator dataset deterministik (COPY protocol) untuk benchmark >1 detik
+  web/               Entrypoint server HTTP
+  worker/            Proses background worker untuk antrean job durable & eksekusi batch
 internal/
   app/               Inisialisasi aplikasi dan routing utama
+  approval/          Operation request, full-group leader approval, dan revalidasi pre-eksekusi
   auth/              Autentikasi, sesi PostgreSQL, dan middleware CSRF
   config/            Pembacaan konfigurasi environment dan .env
+  contracts/         Kontrak lintas komponen (ExecutionPlan, JobQueue, CommitEvidence, dll.)
   database/          Koneksi database target, enkripsi kredensial, viewer, dan schema diff
+  definition/        Penyimpanan definisi/revisi migration M2 dan static validator
+  execution/         Worker runtime, session advisory lock, ordinary/batch executor, dan recovery
+  jobs/              Antrean job durable PostgreSQL, lease heartbeat, retry, dan progress reader
   migration/         Penyimpanan draft, eksekusi transaksional, dan riwayat migration
   platform/          Logika domain user, grup, dan hak akses (RBAC)
   platformdb/        Koneksi database platform dan skrip migrasi internal
   platformui/        Handler dan template UI untuk halaman admin platform
+  telemetry/         Instrumentasi structured logging (slog) dan OpenTelemetry tracing
   web/               Handler dan template halaman beranda dan login
 web/static/          File CSS statis
 ```
@@ -107,6 +117,11 @@ web/static/          File CSS statis
 | `SECURE_COOKIES` | Tidak | Set `true` jika berjalan di balik HTTPS (default: `false`) |
 | `INITIAL_ADMIN_USERNAME` | Tidak | Username admin awal saat database masih kosong |
 | `INITIAL_ADMIN_PASSWORD` | Tidak | Password admin awal (minimal 8 karakter, wajib bersama username) |
+| `WORKER_ID` | Tidak | Identitas unik instance worker (`<hostname>-<pid>` jika kosong) |
+| `WORKER_CONCURRENCY` | Tidak | Jumlah slot eksekusi paralel lintas database target berbeda (default: `4`) |
+| `WORKER_LEASE_DURATION` | Tidak | Durasi lease klaim job di tabel `jobs` (default: `30s`) |
+| `WORKER_HEARTBEAT_INTERVAL` | Tidak | Interval heartbeat perpanjangan lease worker (default: `10s`) |
+| `WORKER_POLL_INTERVAL` | Tidak | Interval polling klaim job baru ketika antrean kosong (default: `2s`) |
 
 ## Daftar Route Utama
 
@@ -147,6 +162,32 @@ Semua route berikut memerlukan sesi; perubahan data memerlukan header `X-CSRF-To
 `POST/GET /api/v1/databases/{id}/operation-requests`, `GET /api/v1/operation-requests/{requestId}`, dan `POST /api/v1/operation-requests/{requestId}/approvals` memulai dan meninjau request tanpa menjalankan atau enqueue SQL. Submit body: `migration_id`, `revision`, `direction` (`APPLY`, `ROLLBACK`, `FORWARD`, `RESUME`, `COMPENSATE`), opsional `expected_head`. Laporan validasi harus lolos. Request membekukan detail migration, checksum, target connection revision, policy version, dan satu requirement untuk **setiap** grup target yang memiliki grant; grup tanpa leader membuat submit gagal. Tidak ada auto-approve, termasuk jika pengaju memimpin grup.
 
 Vote body: `migration_revision`, `review_round`, `group_id`, `checksum`; actor hanya diambil dari session. Hanya leader saat ini yang masih menjadi anggota dan grupnya masih memiliki akses target yang dapat menyetujui. Setiap grup perlu vote tersendiri, termasuk beberapa grup dengan leader yang sama; leader view-only boleh menyetujui tanpa memperoleh hak eksekusi. Request `APPROVED` hanya setelah semua requirement disetujui. Perubahan policy, leader, grant, koneksi, revision, atau checksum menandai request `STALE`; ajukan request baru untuk round baru. Persetujuan bukan izin enqueue/execute; planner dan worker tetap harus revalidasi.
+
+### Worker Runtime, Mode Batch, Recovery Runbook, dan Benchmark >1 Detik (`M2-K01`..`M2-K10`)
+
+Eksekusi SQL terhadap database target dilakukan secara asinkron oleh proses worker terpisah (`cmd/worker`) melalui antrean durable PostgreSQL (`jobs` dan `job_attempts`):
+
+```bash
+# 1. Jalankan migrasi schema database platform secara eksplisit
+go run ./cmd/migrate   # atau: make migrate
+
+# 2. Jalankan background execution worker
+go run ./cmd/worker    # atau: make worker
+```
+
+- **Isolasi & Konkurensi per Database Target (`LOCK-01` & `LOCK-02`)**: Klaim job di antrean menerapkan *per-database exclusion* (`FOR UPDATE SKIP LOCKED`) dan worker mengakuisisi *session-level advisory lock* (`pg_try_advisory_lock`) berdasarkan identitas fisik database target (`current_database()` + `inet_server_addr()` + `inet_server_port()`). Dua job pada database target yang sama selalu dieksekusi secara serial, sedangkan job pada database target berbeda berjalan paralel hingga batas `WORKER_CONCURRENCY`.
+- **Mode Biasa (`NORMAL`) vs Mode Batch (`BATCH`)**:
+  - **Mode Biasa**: Seluruh SQL dijalankan atomik dalam satu transaksi database target beserta pencatatan bukti commit pada `if3110_platform.schema_migrations` dan pembaruan *active head* (`if3110_platform.schema_state`).
+  - **Mode Batch**: Membekukan himpunan primary key target di sisi server (`if3110_platform.batch_recovery_rows`) dan memproses perubahan per batch menggunakan *keyset pagination* (`row_id > last_pk ORDER BY row_id ASC LIMIT batch_size`). Setiap batch di-commit secara atomik bersama checkpoint-nya di `if3110_platform.batch_checkpoints`.
+- **Status Job & Pemulihan Gate (`PARTIAL`, `PARTIALLY_REVERTED`, `UNKNOWN`)**:
+  - Jika worker crash setelah commit di DB target tetapi sebelum memperbarui antrean, status `UNKNOWN` direkonsiliasi otomatis oleh `RecoveryExecutor` dari bukti commit di `if3110_platform.schema_migrations` / `batch_checkpoints` tanpa mengeksekusi ulang SQL.
+  - Jika eksekusi batch berhenti di tengah jalan (`PARTIAL`), database target dipasangi *execution gate* yang memblokir migrasi baru sampai dipulihkan melalui `RESUME` (melanjutkan dari checkpoint terakhir), `COMPENSATE` (*reverse batch compensation* dari batch terakhir mundur ke batch pertama), atau `FORWARD`.
+- **Benchmark Dataset >1 Detik (`PERF-01`)**:
+  ```powershell
+  # Menjalankan generator dataset deterministik (>=1.000.000 baris) & benchmark PERF-01
+  ./scripts/run-benchmark.ps1
+  ```
+  Dokumentasi lengkap arsitektur worker, *recovery runbook*, tabel hasil pengukuran benchmark >1 detik (`Baseline 1..3` vs `Mode Batch` vs `Fail+Resume`), contoh JSON log & OpenTelemetry span, serta *failure drills* tersedia di [`docs/milestone-2/worker-and-benchmark-evidence.md`](docs/milestone-2/worker-and-benchmark-evidence.md).
 
 ## Pengujian (Testing)
 
