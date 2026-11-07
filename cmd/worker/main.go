@@ -75,6 +75,9 @@ func run() error {
 	dbManager.SetExecutorTimeout(cfg.TargetExecutionTimeout)
 
 	jobStore := jobs.NewPostgresJobStore(db).WithDefaultMaxRetries(cfg.JobMaxRetries)
+	gateStore := execution.NewPostgresGateStore(db)
+	revalidator := execution.NewPlatformRevalidator(db, platformService, gateStore)
+	executor := execution.NewDispatchExecutor(gateStore, jobStore)
 
 	worker, err := execution.NewWorker(execution.WorkerConfig{
 		WorkerID:          cfg.WorkerID,
@@ -85,6 +88,9 @@ func run() error {
 		ExecutionTimeout:  cfg.TargetExecutionTimeout,
 		Queue:             jobStore,
 		ConnProvider:      dbManager,
+		HeadReader:        execution.TargetHeadReader{},
+		Revalidator:       revalidator,
+		Executor:          executor,
 		Logger:            logger,
 	})
 	if err != nil {
