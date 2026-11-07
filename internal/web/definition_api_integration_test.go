@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/api"
+	"if3110.local/db-platform/internal/approval"
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/contracts"
 	"if3110.local/db-platform/internal/definition"
@@ -46,6 +48,9 @@ func TestPostgresDefinitionAPI(t *testing.T) {
 	if err := p.SetMembership(ctx, admin, admin, group, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := p.SetGroupLeader(ctx, admin, group, admin); err != nil {
+		t.Fatal(err)
+	}
 	var id string
 	if err := db.QueryRowContext(ctx, `INSERT INTO database_connections(name,host,port,database_name,username,ssl_mode,password_ciphertext) VALUES('A','localhost',5432,'target','tester','disable',$1) RETURNING id::text`, make([]byte, 29)).Scan(&id); err != nil {
 		t.Fatal(err)
@@ -57,6 +62,14 @@ func TestPostgresDefinitionAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	approvals, err := approval.NewService(db, p, definitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvalHandler, err := api.NewApprovalHandler(approvals, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authHandler, err := api.NewAuthHandler(api.AuthConfig{Authenticator: login, Sessions: sessions})
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +77,8 @@ func TestPostgresDefinitionAPI(t *testing.T) {
 	routes := http.NewServeMux()
 	routes.Handle("/api/v1/databases/{id}/migrations", apiHandler)
 	routes.Handle("/api/v1/databases/{id}/migrations/", apiHandler)
+	routes.Handle("/api/v1/databases/{id}/operation-requests", approvalHandler)
+	routes.Handle("/api/v1/operation-requests/", approvalHandler)
 	routes.Handle("/api/", authHandler)
 	handler, err := New(Config{Authenticator: login, Sessions: sessions, API: routes, CSRFKey: []byte("01234567890123456789012345678901"), FrontendOrigins: []string{"http://localhost:3000"}})
 	if err != nil {
@@ -131,5 +146,28 @@ func TestPostgresDefinitionAPI(t *testing.T) {
 	validated := request("POST", detail+"/validate", "", csrf.Data.Token)
 	if validated.Code != 200 || !strings.Contains(validated.Body.String(), `"valid":true`) || !strings.Contains(validated.Body.String(), `"COMPATIBILITY_UNVERIFIED"`) {
 		t.Fatalf("validation: %d %s", validated.Code, validated.Body.String())
+	}
+	requestPath := "/api/v1/databases/" + id + "/operation-requests"
+	submitted := request("POST", requestPath, `{"migration_id":"`+result.Data.Migration.ID+`","revision":2,"direction":"APPLY"}`, csrf.Data.Token)
+	var approvalResult struct {
+		Data struct {
+			Request struct {
+				ID       string `json:"id"`
+				Checksum string `json:"checksum"`
+				Round    int    `json:"review_round"`
+			} `json:"request"`
+		} `json:"data"`
+	}
+	if submitted.Code != 201 || json.Unmarshal(submitted.Body.Bytes(), &approvalResult) != nil || approvalResult.Data.Request.ID == "" {
+		t.Fatalf("submit operation request: %d %s", submitted.Code, submitted.Body.String())
+	}
+	votePath := "/api/v1/operation-requests/" + approvalResult.Data.Request.ID + "/approvals"
+	voteBody := `{"migration_revision":2,"review_round":` + strconv.Itoa(approvalResult.Data.Request.Round) + `,"group_id":"` + string(group) + `","checksum":"` + approvalResult.Data.Request.Checksum + `"}`
+	if w := request("POST", votePath, voteBody, ""); w.Code != 403 {
+		t.Fatalf("approval without CSRF: %d %s", w.Code, w.Body.String())
+	}
+	approved := request("POST", votePath, voteBody, csrf.Data.Token)
+	if approved.Code != 200 || !strings.Contains(approved.Body.String(), `"status":"APPROVED"`) {
+		t.Fatalf("approve operation request: %d %s", approved.Code, approved.Body.String())
 	}
 }

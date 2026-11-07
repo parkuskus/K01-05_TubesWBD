@@ -142,6 +142,12 @@ Semua route berikut memerlukan sesi; perubahan data memerlukan header `X-CSRF-To
 
 `POST /api/v1/databases/{id}/migrations/{migrationId}/validate` mengembalikan laporan validasi untuk revisi tersimpan saat ini (`valid`, `errors`, `warnings`, `compatibility_notes`, revision, checksum); laporan dengan temuan tetap berstatus HTTP 200 dan `valid: false`. Pemeriksaan bersifat statis dan tidak menjalankan SQL atau membuktikan kompatibilitas aplikasi; approver tetap harus menilai catatan kompatibilitas. `batch_plan` memakai field `table_schema`, `table_name`, `primary_key_column`, `scope_where`, dan `batch_size`; batch size yang diterima saat ini 1–10.000 dan SQL harus sesuai template UPDATE yang didukung executor.
 
+### Operation request dan approval seluruh grup (M2-A06)
+
+`POST/GET /api/v1/databases/{id}/operation-requests`, `GET /api/v1/operation-requests/{requestId}`, dan `POST /api/v1/operation-requests/{requestId}/approvals` memulai dan meninjau request tanpa menjalankan atau enqueue SQL. Submit body: `migration_id`, `revision`, `direction` (`APPLY`, `ROLLBACK`, `FORWARD`, `RESUME`, `COMPENSATE`), opsional `expected_head`. Laporan validasi harus lolos. Request membekukan detail migration, checksum, target connection revision, policy version, dan satu requirement untuk **setiap** grup target yang memiliki grant; grup tanpa leader membuat submit gagal. Tidak ada auto-approve, termasuk jika pengaju memimpin grup.
+
+Vote body: `migration_revision`, `review_round`, `group_id`, `checksum`; actor hanya diambil dari session. Hanya leader saat ini yang masih menjadi anggota dan grupnya masih memiliki akses target yang dapat menyetujui. Setiap grup perlu vote tersendiri, termasuk beberapa grup dengan leader yang sama; leader view-only boleh menyetujui tanpa memperoleh hak eksekusi. Request `APPROVED` hanya setelah semua requirement disetujui. Perubahan policy, leader, grant, koneksi, revision, atau checksum menandai request `STALE`; ajukan request baru untuk round baru. Persetujuan bukan izin enqueue/execute; planner dan worker tetap harus revalidasi.
+
 ## Pengujian (Testing)
 
 Untuk menjalankan seluruh unit test:
