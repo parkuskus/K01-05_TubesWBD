@@ -70,7 +70,7 @@ BEGIN
         OR EXISTS (SELECT 1 FROM approval_requirements WHERE request_id=OLD.id)) THEN
         RAISE EXCEPTION 'operation request checksum is immutable' USING ERRCODE = '23514';
     END IF;
-    IF OLD.status <> NEW.status AND NOT (OLD.status = 'PENDING_REVIEW' AND NEW.status IN ('APPROVED', 'STALE')) THEN
+    IF OLD.status <> NEW.status AND NOT (OLD.status IN ('PENDING_REVIEW', 'APPROVED') AND NEW.status IN ('APPROVED', 'STALE')) THEN
         RAISE EXCEPTION 'invalid operation request status transition' USING ERRCODE = '23514';
     END IF;
     RETURN NEW;

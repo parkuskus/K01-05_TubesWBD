@@ -96,16 +96,24 @@ func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID
 	if err := tx.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true FOR SHARE`).Scan(&policyVersion); err != nil {
 		return Request{}, approvalError(err)
 	}
+	var effectiveAccess int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(a.level),0) FROM group_memberships m JOIN group_database_access a ON a.group_id=m.group_id WHERE m.user_id=$1 AND a.database_id=$2`, actor, dbID).Scan(&effectiveAccess); err != nil {
+		return Request{}, approvalError(err)
+	}
+	if effectiveAccess < int(contracts.AccessViewEdit) {
+		return Request{}, contracts.ErrForbidden
+	}
 	if err := tx.QueryRowContext(ctx, `SELECT revision FROM database_connections WHERE id=$1 FOR SHARE`, dbID).Scan(&connectionRevision); err != nil {
 		return Request{}, approvalError(err)
 	}
 	var state string
 	var currentRevision int
+	var definitionConnectionRevision int64
 	var checksum string
-	if err := tx.QueryRowContext(ctx, `SELECT d.state,d.current_revision,r.checksum FROM migration_definitions d JOIN migration_revisions r ON r.migration_id=d.id AND r.revision=d.current_revision WHERE d.id=$1 AND d.database_id=$2 FOR UPDATE OF d`, migID, dbID).Scan(&state, &currentRevision, &checksum); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT d.state,d.current_revision,d.connection_revision,r.checksum FROM migration_definitions d JOIN migration_revisions r ON r.migration_id=d.id AND r.revision=d.current_revision WHERE d.id=$1 AND d.database_id=$2 FOR UPDATE OF d`, migID, dbID).Scan(&state, &currentRevision, &definitionConnectionRevision, &checksum); err != nil {
 		return Request{}, approvalError(err)
 	}
-	if state != "DRAFT" || currentRevision != revision || checksum != report.Checksum {
+	if state != "DRAFT" || currentRevision != revision || checksum != report.Checksum || definitionConnectionRevision != connectionRevision {
 		return Request{}, ErrConflict
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT g.id,g.leader_user_id,a.level FROM group_database_access a JOIN groups g ON g.id=a.group_id WHERE a.database_id=$1 AND a.level IN (1,2) ORDER BY g.id`, dbID)
@@ -253,7 +261,7 @@ func (s *Service) Approve(ctx context.Context, actor contracts.UserID, requestID
 		return Request{}, ErrNotFound
 	}
 	group, err := idValue(string(groupID))
-	if err != nil || revision < 1 || round < 1 || len(checksum) != 64 {
+	if err != nil || revision < 1 || round < 1 {
 		return Request{}, ErrInvalidInput
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -265,6 +273,21 @@ func (s *Service) Approve(ctx context.Context, actor contracts.UserID, requestID
 	err = tx.QueryRowContext(ctx, `SELECT `+requestFields+` FROM operation_requests WHERE id=$1 FOR UPDATE`, request).Scan(&item.ID, &item.DatabaseID, &item.MigrationID, &item.Revision, &item.Direction, &item.ExpectedHead, &item.ConnectionRevision, &item.PolicyVersion, &item.RevisionChecksum, &item.Checksum, &item.Status, &item.Round, &item.CreatedBy, &item.CreatedAt)
 	if err != nil {
 		return Request{}, approvalError(err)
+	}
+	var liveLeader int64
+	var isMember, hasGrant bool
+	err = tx.QueryRowContext(ctx, `SELECT g.leader_user_id,EXISTS(SELECT 1 FROM group_memberships m WHERE m.group_id=g.id AND m.user_id=$3),EXISTS(SELECT 1 FROM group_database_access a WHERE a.group_id=g.id AND a.database_id=$4 AND a.level IN (1,2)) FROM approval_requirements r JOIN groups g ON g.id=r.group_id WHERE r.request_id=$1 AND r.group_id=$2`, request, group, actor, item.DatabaseID).Scan(&liveLeader, &isMember, &hasGrant)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Request{}, ErrNotFound
+	}
+	if err != nil {
+		return Request{}, approvalError(err)
+	}
+	if !isMember || !hasGrant || strconv.FormatInt(liveLeader, 10) != string(actor) {
+		return Request{}, ErrNotFound
+	}
+	if len(checksum) != 64 {
+		return Request{}, ErrInvalidInput
 	}
 	if revision != item.Revision || round != item.Round || checksum != item.Checksum {
 		return Request{}, ErrStale
@@ -342,17 +365,6 @@ func (s *Service) Approve(ctx context.Context, actor contracts.UserID, requestID
 			return Request{}, approvalError(err)
 		}
 		return Request{}, ErrStale
-	}
-	var savedLeader int64
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT r.leader_user_id,EXISTS(SELECT 1 FROM group_memberships m WHERE m.group_id=r.group_id AND m.user_id=r.leader_user_id) FROM approval_requirements r WHERE r.request_id=$1 AND r.group_id=$2`, request, group).Scan(&savedLeader, &exists); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Request{}, contracts.ErrForbidden
-		}
-		return Request{}, approvalError(err)
-	}
-	if !exists || strconv.FormatInt(savedLeader, 10) != string(actor) {
-		return Request{}, contracts.ErrForbidden
 	}
 	var priorActor string
 	err = tx.QueryRowContext(ctx, `SELECT actor_id::text FROM approval_votes WHERE request_id=$1 AND review_round=$2 AND group_id=$3`, request, round, group).Scan(&priorActor)

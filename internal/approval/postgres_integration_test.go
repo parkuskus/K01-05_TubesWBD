@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -29,6 +30,32 @@ type approvalFixture struct {
 	databaseID  contracts.DatabaseID
 	users       []contracts.UserID
 	groups      []contracts.GroupID
+}
+
+type approvalValidatorFunc func(context.Context, contracts.UserID, contracts.DatabaseID, string) (definition.ValidationReport, error)
+
+func (f approvalValidatorFunc) Validate(ctx context.Context, actor contracts.UserID, databaseID contracts.DatabaseID, migrationID string) (definition.ValidationReport, error) {
+	return f(ctx, actor, databaseID, migrationID)
+}
+
+type revokingAuthorizer struct {
+	contracts.Authorizer
+	db       *sql.DB
+	groupID  contracts.GroupID
+	database contracts.DatabaseID
+	done     bool
+}
+
+func (a *revokingAuthorizer) RequireDatabaseAccess(ctx context.Context, actor contracts.UserID, databaseID contracts.DatabaseID, action contracts.DatabaseAction) error {
+	if err := a.Authorizer.RequireDatabaseAccess(ctx, actor, databaseID, action); err != nil {
+		return err
+	}
+	if action == contracts.ActionCreateMigration && !a.done {
+		a.done = true
+		_, err := a.db.ExecContext(ctx, `UPDATE group_database_access SET level=1 WHERE group_id=$1 AND database_id=$2`, a.groupID, a.database)
+		return err
+	}
+	return nil
 }
 
 func newApprovalFixture(t *testing.T) *approvalFixture {
@@ -175,6 +202,15 @@ func TestPostgresApprovalRequiresEveryGrantedGroup(t *testing.T) {
 	if err != nil || request.Status != "APPROVED" {
 		t.Fatalf("identical duplicate vote was not idempotent: %+v %v", request, err)
 	}
+	if _, err := f.db.Exec(`UPDATE group_database_access SET level=1 WHERE group_id=$1 AND database_id=$2`, f.groups[0], f.databaseID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Approve(context.Background(), f.users[3], request.ID, d.Revision, request.Round, f.groups[2], request.Checksum); !errors.Is(err, approval.ErrStale) {
+		t.Fatalf("approved request after policy change = %v, want ErrStale", err)
+	}
+	if got, err := f.service.Get(context.Background(), f.users[0], f.databaseID, request.ID); err != nil || got.Status != "STALE" {
+		t.Fatalf("approved request did not become stale: %+v %v", got, err)
+	}
 }
 
 func TestPostgresApprovalRejectsMissingLeaderAndSpoofedGroup(t *testing.T) {
@@ -205,8 +241,8 @@ func TestPostgresApprovalRejectsMissingLeaderAndSpoofedGroup(t *testing.T) {
 	if _, err := f.service.Submit(context.Background(), f.users[4], f.databaseID, d.ID, d.Revision, contracts.DirectionApply, ""); !errors.Is(err, contracts.ErrForbidden) {
 		t.Fatalf("submit without grant = %v, want forbidden", err)
 	}
-	if _, err := f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[1], request.Checksum); !errors.Is(err, contracts.ErrForbidden) {
-		t.Fatalf("leader of another group voted = %v, want forbidden", err)
+	if _, err := f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[1], request.Checksum); !errors.Is(err, approval.ErrNotFound) {
+		t.Fatalf("leader of another group vote = %v, want hidden request", err)
 	}
 	if _, err := f.service.Approve(context.Background(), f.users[2], request.ID, d.Revision, request.Round, f.groups[1], strings.Repeat("b", 64)); !errors.Is(err, approval.ErrStale) {
 		t.Fatalf("stale checksum vote = %v, want ErrStale", err)
@@ -223,6 +259,13 @@ func TestPostgresApprovalBecomesStaleAfterPolicyChange(t *testing.T) {
 	}
 	if _, err := f.db.Exec(`UPDATE group_database_access SET level=$3 WHERE group_id=$1 AND database_id=$2`, f.groups[0], f.databaseID, contracts.AccessViewOnly); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := f.service.Approve(context.Background(), f.users[4], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum); !errors.Is(err, approval.ErrNotFound) {
+		t.Fatalf("outsider vote on stale request = %v, want hidden request", err)
+	}
+	stillPending, err := f.service.Get(context.Background(), f.users[0], f.databaseID, request.ID)
+	if err != nil || stillPending.Status != "PENDING_REVIEW" {
+		t.Fatalf("outsider changed stale request state: %+v %v", stillPending, err)
 	}
 	if _, err := f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum); !errors.Is(err, approval.ErrStale) {
 		t.Fatalf("vote after policy change = %v, want ErrStale", err)
@@ -269,6 +312,7 @@ func TestPostgresLeaderAndConnectionChangesStaleRequests(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			voteLeader := f.users[1]
 			if change == "leader" {
 				if _, err := f.db.Exec(`INSERT INTO group_memberships(group_id,user_id) VALUES($1,$2)`, f.groups[0], f.users[2]); err != nil {
 					t.Fatal(err)
@@ -276,15 +320,62 @@ func TestPostgresLeaderAndConnectionChangesStaleRequests(t *testing.T) {
 				if _, err := f.db.Exec(`UPDATE groups SET leader_user_id=$2 WHERE id=$1`, f.groups[0], f.users[2]); err != nil {
 					t.Fatal(err)
 				}
+				voteLeader = f.users[2]
 			} else {
 				if _, err := f.db.Exec(`UPDATE database_connections SET revision=revision+1 WHERE id=$1`, f.databaseID); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum); !errors.Is(err, approval.ErrStale) {
+			if _, err := f.service.Approve(context.Background(), voteLeader, request.ID, d.Revision, request.Round, f.groups[0], request.Checksum); !errors.Is(err, approval.ErrStale) {
 				t.Fatalf("vote after %s change = %v, want ErrStale", change, err)
 			}
 		})
+	}
+}
+
+func TestPostgresSubmitRechecksSubmitterGrantInLockedSnapshot(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	p := platform.NewService(f.db)
+	authorizer := &revokingAuthorizer{Authorizer: p, db: f.db, groupID: f.groups[0], database: f.databaseID}
+	service, err := approval.NewService(f.db, authorizer, f.definitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Submit(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionApply, ""); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("submission after edit grant revocation = %v, want forbidden", err)
+	}
+	var count int
+	if err := f.db.QueryRow(`SELECT count(*) FROM operation_requests`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("revoked submitter created a request: count=%d err=%v", count, err)
+	}
+}
+
+func TestPostgresSubmitRejectsConnectionChangeAfterValidation(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	validator := approvalValidatorFunc(func(ctx context.Context, actor contracts.UserID, databaseID contracts.DatabaseID, migrationID string) (definition.ValidationReport, error) {
+		report, err := f.definitions.Validate(ctx, actor, databaseID, migrationID)
+		if err != nil {
+			return report, err
+		}
+		if _, err := f.db.ExecContext(ctx, `UPDATE database_connections SET revision=revision+1 WHERE id=$1`, databaseID); err != nil {
+			return definition.ValidationReport{}, err
+		}
+		return report, nil
+	})
+	service, err := approval.NewService(f.db, platform.NewService(f.db), validator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Submit(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionApply, ""); !errors.Is(err, approval.ErrConflict) {
+		t.Fatalf("submission after connection revision changed = %v, want conflict", err)
+	}
+	var count int
+	if err := f.db.QueryRow(`SELECT count(*) FROM operation_requests`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("stale validation created a request: count=%d err=%v", count, err)
 	}
 }
 
@@ -317,5 +408,55 @@ func TestPostgresConcurrentGroupVotesApproveOnceAllPresent(t *testing.T) {
 	got, err := f.service.Get(context.Background(), f.users[0], f.databaseID, request.ID)
 	if err != nil || got.Status != "APPROVED" || len(got.Requirements) != 2 || got.Requirements[0].Vote == nil || got.Requirements[1].Vote == nil {
 		t.Fatalf("concurrent votes lost: %+v %v", got, err)
+	}
+}
+
+func TestPostgresPolicyMutationSerializesBeforeVote(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	request, err := f.service.Submit(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionApply, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := f.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var locked int64
+	if err := tx.QueryRow(`SELECT version FROM platform_policy_version WHERE id=true FOR UPDATE`).Scan(&locked); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	voteResult := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum)
+		voteResult <- err
+	}()
+	<-started
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var waiting int
+		if err := f.db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%platform_policy_version%' AND pid<>pg_backend_pid()`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("vote never waited for the policy snapshot lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := tx.Exec(`UPDATE group_database_access SET level=1 WHERE group_id=$1 AND database_id=$2`, f.groups[0], f.databaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-voteResult; !errors.Is(err, approval.ErrStale) {
+		t.Fatalf("vote concurrent with policy mutation = %v, want ErrStale", err)
 	}
 }
