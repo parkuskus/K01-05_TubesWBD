@@ -407,13 +407,13 @@ func verifyBatchPostImagesInTx(
 			r.row_id,
 			r.before_data,
 			r.after_data,
-			to_jsonb(t.*) AS current_data
+			to_jsonb(t) AS current_data
 		 FROM if3110_platform.batch_recovery_rows r
 		 LEFT JOIN %s.%s t ON t.%s::bigint = r.row_id
 		 WHERE r.execution_id = $1
 		   AND r.batch_no = $2
 		 ORDER BY r.row_id ASC
-		 FOR UPDATE OF t`,
+		 FOR UPDATE OF r`,
 		quotedSchema,
 		quotedTable,
 		quotedPK,

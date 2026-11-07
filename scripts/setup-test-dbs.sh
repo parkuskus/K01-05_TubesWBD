@@ -24,9 +24,9 @@ psql_admin -d postgres <<-EOSQL
 	DO \$\$
 	BEGIN
 		IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
-			CREATE ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' CREATEDB;
+			CREATE ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' NOSUPERUSER CREATEDB CREATEROLE;
 		ELSE
-			ALTER ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' CREATEDB;
+			ALTER ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' NOSUPERUSER CREATEDB CREATEROLE;
 		END IF;
 
 		IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${RO_ROLE}') THEN
@@ -36,17 +36,18 @@ psql_admin -d postgres <<-EOSQL
 		END IF;
 	END
 	\$\$;
+	ALTER ROLE ${APP_ROLE} SET createrole_self_grant = 'set, inherit';
 EOSQL
 
-for db in platform_test target_test target_test_b; do
+for db in platform_test target_test target_test_a target_test_b; do
 	echo "==> Recreating disposable database: ${db}..."
 	psql_admin -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db}' AND pid <> pg_backend_pid();" >/dev/null
 	psql_admin -d postgres -c "DROP DATABASE IF EXISTS ${db};"
 	psql_admin -d postgres -c "CREATE DATABASE ${db} OWNER ${APP_ROLE};"
 done
 
-echo "==> Configuring read-only privileges on target_test and target_test_b for ${RO_ROLE}..."
-for db in target_test target_test_b; do
+echo "==> Configuring read-only privileges on target_test, target_test_a, and target_test_b for ${RO_ROLE}..."
+for db in target_test target_test_a target_test_b; do
 	psql_admin -d "$db" <<-EOSQL
 		GRANT CONNECT ON DATABASE ${db} TO ${RO_ROLE};
 		GRANT USAGE ON SCHEMA public TO ${RO_ROLE};
@@ -56,7 +57,7 @@ done
 
 echo "==> Disposable test databases ready:"
 echo "  PLATFORM_TEST_DATABASE_URL=postgres://${APP_ROLE}:<password>@${PGHOST}:${PGPORT}/platform_test?sslmode=disable"
-echo "  TARGET_TEST_DATABASE_URL=postgres://${APP_ROLE}:<password>@${PGHOST}:${PGPORT}/target_test?sslmode=disable"
+echo "  TARGET_TEST_DATABASE_URL=postgres://${APP_ROLE}:<password>@${PGHOST}:${PGPORT}/target_test_a?sslmode=disable"
 echo "  TARGET_TEST_DATABASE_B_URL=postgres://${APP_ROLE}:<password>@${PGHOST}:${PGPORT}/target_test_b?sslmode=disable"
-echo "  MIGRATION_READONLY_TEST_DATABASE_URL=postgres://${RO_ROLE}:<password>@${PGHOST}:${PGPORT}/target_test?sslmode=disable"
+echo "  MIGRATION_READONLY_TEST_DATABASE_URL=postgres://${RO_ROLE}:<password>@${PGHOST}:${PGPORT}/target_test_a?sslmode=disable"
 

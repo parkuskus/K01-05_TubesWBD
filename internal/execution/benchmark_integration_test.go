@@ -303,28 +303,40 @@ func TestPerf01BatchVsSingleUpdateBenchmarkIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open benchmark db: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_, _ = db.ExecContext(cleanupCtx, `DROP SCHEMA IF EXISTS if3110_platform CASCADE; DROP TABLE IF EXISTS public.bench_orders CASCADE;`)
+		_ = db.Close()
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
-	// Calibrate row count so single UPDATE exceeds 1 second on this hardware.
-	totalRows := int64(1_000_000)
-	const minSingleUpdateDuration = 1050 * time.Millisecond
-	for attempt := 0; attempt < 4; attempt++ {
-		probe, err := runSingleUnbatchedBaseline(ctx, db, "Calibration-Probe", totalRows)
-		if err != nil {
-			t.Fatalf("calibration probe failed: %v", err)
+	// Calibrate row count so single UPDATE exceeds 1 second when RUN_PERF_BENCHMARK=1;
+	// otherwise use a compact deterministic dataset (2,500 rows / 250 batch size = 10 batches)
+	// so CI integration suites execute the full live PostgreSQL benchmark flow without skipping.
+	totalRows := int64(2_500)
+	batchSize := 250
+	if os.Getenv("RUN_PERF_BENCHMARK") == "1" {
+		totalRows = 1_000_000
+		batchSize = 25_000
+		const minSingleUpdateDuration = 1050 * time.Millisecond
+		for attempt := 0; attempt < 4; attempt++ {
+			probe, err := runSingleUnbatchedBaseline(ctx, db, "Calibration-Probe", totalRows)
+			if err != nil {
+				t.Fatalf("calibration probe failed: %v", err)
+			}
+			if probe.TotalCommitDuration >= minSingleUpdateDuration || totalRows >= 8_000_000 {
+				t.Logf("calibrated dataset: rows=%d single_update_duration=%s", totalRows, probe.TotalCommitDuration)
+				break
+			}
+			ratio := float64(1250*time.Millisecond) / float64(probe.TotalCommitDuration+1*time.Millisecond)
+			if ratio < 1.5 {
+				ratio = 1.5
+			}
+			totalRows = int64(float64(totalRows) * ratio)
 		}
-		if probe.TotalCommitDuration >= minSingleUpdateDuration || totalRows >= 8_000_000 {
-			t.Logf("calibrated dataset: rows=%d single_update_duration=%s", totalRows, probe.TotalCommitDuration)
-			break
-		}
-		ratio := float64(1250*time.Millisecond) / float64(probe.TotalCommitDuration+1*time.Millisecond)
-		if ratio < 1.5 {
-			ratio = 1.5
-		}
-		totalRows = int64(float64(totalRows) * ratio)
 	}
 
 	// 1. Run 3x Single UPDATE Baselines from identical initial states.
@@ -346,7 +358,6 @@ func TestPerf01BatchVsSingleUpdateBenchmarkIntegration(t *testing.T) {
 	}
 
 	// 2. Run Mode Batch on the exact same initial dataset state.
-	const batchSize = 25_000
 	if err := seedBenchmarkOrders(ctx, db, totalRows); err != nil {
 		t.Fatalf("seed for batch run: %v", err)
 	}
