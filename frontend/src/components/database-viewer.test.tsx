@@ -20,8 +20,7 @@ vi.mock("next/navigation", () => ({
 const choice = {
   id: "1",
   name: "Inventory",
-  access_level: 1,
-  capabilities: { create_migration: false },
+  level: 1,
 };
 function transport() {
   return vi.fn().mockImplementation((path: string) => {
@@ -43,11 +42,13 @@ function transport() {
       return Promise.resolve(
         Response.json({
           data: {
-            schema: "public",
-            name: "odd/table?",
-            columns: [{ name: "id", type: "integer", nullable: false, default: "" }],
-            constraints: [{ name: "pk", sql: "PRIMARY KEY (id)" }],
-            indexes: [{ name: "idx", sql: "CREATE INDEX idx ON items (id)" }],
+            table: {
+              schema: "public",
+              name: "odd/table?",
+              columns: [{ name: "id", type: "integer", nullable: false, default: "" }],
+              constraints: [{ name: "pk", sql: "PRIMARY KEY (id)" }],
+              indexes: [{ name: "idx", sql: "CREATE INDEX idx ON items (id)" }],
+            },
           },
         }),
       );
@@ -55,23 +56,25 @@ function transport() {
       return Promise.resolve(
         Response.json({
           data: {
-            columns: ["id", "value", "note"],
-            rows:
-              url.searchParams.get("page") === "2"
-                ? [[{ text: "second-page", null: false, truncated: false }]]
-                : [
-                    [
-                      { text: "", null: true, truncated: false },
-                      { text: "", null: false, truncated: false },
-                      { text: "<script>unsafe()</script>", null: false, truncated: true },
+            page: {
+              columns: ["id", "value", "note"],
+              rows:
+                url.searchParams.get("page") === "2"
+                  ? [[{ text: "second-page", null: false, truncated: false }]]
+                  : [
+                      [
+                        { text: "", null: true, truncated: false },
+                        { text: "", null: false, truncated: false },
+                        { text: "<script>unsafe()</script>", null: false, truncated: true },
+                      ],
                     ],
-                  ],
-            page: Number(url.searchParams.get("page")),
-            has_next: url.searchParams.get("page") !== "2",
+              page: Number(url.searchParams.get("page")),
+              has_next: url.searchParams.get("page") !== "2",
+            },
           },
         }),
       );
-    return Promise.resolve(Response.json({ data: choice }));
+    return Promise.resolve(Response.json({ data: { database: choice } }));
   });
 }
 function mount() {

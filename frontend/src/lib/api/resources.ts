@@ -15,3 +15,11 @@ export function json(method: string, body: unknown): RequestInit {
 }
 
 export const resourceID = encodeURIComponent;
+
+export async function mutationResource<T>(api: ApiClient, path: string, init: RequestInit) {
+  const data = await api.request<T>(path, init);
+  if (data === undefined || data === null) {
+    throw new ApiError("Respons data tidak valid.", 200, "INVALID_RESPONSE");
+  }
+  return data;
+}

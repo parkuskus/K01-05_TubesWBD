@@ -12,6 +12,7 @@ import { Badge, EmptyState, LoadingState, SqlField, TextField } from "@/componen
 import { TableViewport } from "@/components/workspace-ui";
 import { ApiError } from "@/lib/api/client";
 import { databaseApi, type SchemaDiff } from "@/lib/api/databases";
+import { resourceID } from "@/lib/api/resources";
 
 export function SchemaDiffWorkspace({ id }: { id: string }) {
   const { api } = useAuth();
@@ -235,7 +236,13 @@ function DiffResult({ id, diff, canDraft }: { id: string; diff: SchemaDiff; canD
       {created ? (
         <p role="status" className="rounded-md bg-accent-soft p-4 text-sm leading-6 text-accent">
           Draft #{created} berhasil dibuat. Lengkapi SQL down atau alasan irreversible sebelum
-          mengajukan review.
+          mengajukan review.{" "}
+          <Link
+            className="underline underline-offset-4"
+            href={`/databases/${resourceID(id)}/migrations/${resourceID(created)}`}
+          >
+            Buka editor migration
+          </Link>
         </p>
       ) : canDraft && diff.sql ? (
         <MutationDialog

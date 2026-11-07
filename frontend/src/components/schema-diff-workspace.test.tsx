@@ -50,14 +50,12 @@ function transport(rejectDraft = false) {
       );
     if (path.endsWith("/schemas"))
       return Promise.resolve(Response.json({ data: { schemas: ["reference", "public"] } }));
-    if (path.includes("/schema-diff?")) return Promise.resolve(Response.json({ data: difference }));
+    if (path.includes("/schema-diff?"))
+      return Promise.resolve(Response.json({ data: { diff: difference } }));
     return Promise.resolve(
       Response.json({
         data: {
-          id: "1",
-          name: "Inventory",
-          access_level: canDraft ? 2 : 1,
-          capabilities: { create_migration: canDraft },
+          database: { id: "1", name: "Inventory", level: canDraft ? 2 : 1 },
         },
       }),
     );

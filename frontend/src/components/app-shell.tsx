@@ -60,7 +60,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           ({ label, href, icon: Icon }) => {
             const active =
               pathname === href ||
-              (href === "/" ? pathname.startsWith("/databases/") : pathname.startsWith(`${href}/`));
+              (href === "/"
+                ? pathname.startsWith("/databases/")
+                : pathname.startsWith(`${href}/`)) ||
+              (href === "/activity" &&
+                (pathname.startsWith("/jobs/") || pathname.startsWith("/operation-requests/")));
             return (
               <Link
                 key={href}
@@ -175,7 +179,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="text-sm text-ink-secondary">Workspace</span>
           <ChevronRight className="size-3 text-ink-secondary" aria-hidden="true" />
           <span className="text-sm font-medium">
-            {pathname === "/activity"
+            {pathname === "/activity" ||
+            pathname.startsWith("/jobs/") ||
+            pathname.startsWith("/operation-requests/")
               ? "Aktivitas"
               : pathname.startsWith("/platform/users")
                 ? "Pengguna"
