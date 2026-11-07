@@ -18,6 +18,8 @@ import (
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
 	"if3110.local/db-platform/internal/definition"
+	"if3110.local/db-platform/internal/execution"
+	"if3110.local/db-platform/internal/jobs"
 	"if3110.local/db-platform/internal/migration"
 	"if3110.local/db-platform/internal/platform"
 	"if3110.local/db-platform/internal/telemetry"
@@ -75,6 +77,10 @@ func run() error {
 		return fmt.Errorf("configure database manager: %w", err)
 	}
 	defer dbManager.Close()
+	targetEvidence, err := execution.NewTargetCommitEvidenceReader(dbManager)
+	if err != nil {
+		return fmt.Errorf("configure target commit evidence reader: %w", err)
+	}
 	migrationService, err := migration.NewService(platformService, dbManager)
 	if err != nil {
 		return fmt.Errorf("configure migration service: %w", err)
@@ -107,7 +113,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure migration approvals: %w", err)
 	}
-	approvalAPI, err := api.NewApprovalHandler(approvals, sessions)
+	approvalAPI, err := api.NewApprovalHandler(approvals, sessions, targetEvidence, jobs.NewPostgresJobStore(db).AsContractPublisher())
 	if err != nil {
 		return fmt.Errorf("configure approval API: %w", err)
 	}

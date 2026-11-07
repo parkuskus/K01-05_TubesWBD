@@ -20,6 +20,7 @@ import (
 	"if3110.local/db-platform/internal/approval"
 	"if3110.local/db-platform/internal/contracts"
 	"if3110.local/db-platform/internal/definition"
+	"if3110.local/db-platform/internal/jobs"
 	"if3110.local/db-platform/internal/platform"
 )
 
@@ -33,6 +34,23 @@ type approvalFixture struct {
 }
 
 type approvalValidatorFunc func(context.Context, contracts.UserID, contracts.DatabaseID, string) (definition.ValidationReport, error)
+
+type approvalEvidence struct {
+	head    contracts.ActiveHeadState
+	history []contracts.CommitHistoryEvent
+}
+
+func (e approvalEvidence) ActiveHead(context.Context, contracts.DatabaseID) (contracts.ActiveHeadState, error) {
+	return e.head, nil
+}
+
+func (e approvalEvidence) ListCommitHistory(context.Context, contracts.DatabaseID) ([]contracts.CommitHistoryEvent, error) {
+	return e.history, nil
+}
+
+func (approvalEvidence) BatchProgress(context.Context, contracts.DatabaseID, contracts.ExecutionID) (contracts.BatchCheckpointState, error) {
+	return contracts.BatchCheckpointState{}, nil
+}
 
 func (f approvalValidatorFunc) Validate(ctx context.Context, actor contracts.UserID, databaseID contracts.DatabaseID, migrationID string) (definition.ValidationReport, error) {
 	return f(ctx, actor, databaseID, migrationID)
@@ -210,6 +228,132 @@ func TestPostgresApprovalRequiresEveryGrantedGroup(t *testing.T) {
 	}
 	if got, err := f.service.Get(context.Background(), f.users[0], f.databaseID, request.ID); err != nil || got.Status != "STALE" {
 		t.Fatalf("approved request did not become stale: %+v %v", got, err)
+	}
+}
+
+func TestPostgresRollbackCanEnterReviewFromLockedRevision(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	if err := f.definitions.MarkAttempted(context.Background(), d.ID, d.Revision); err != nil {
+		t.Fatal(err)
+	}
+	request, err := f.service.Submit(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionRollback, "active-execution")
+	if err != nil {
+		t.Fatalf("submit rollback review: %v", err)
+	}
+	if request.Status != "PENDING_REVIEW" || request.Direction != contracts.DirectionRollback {
+		t.Fatalf("rollback request not submitted for review: %+v", request)
+	}
+}
+
+func TestPostgresResumeReviewBindsOriginAndRevalidationRequiresGate(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	if err := f.definitions.MarkAttempted(context.Background(), d.ID, d.Revision); err != nil {
+		t.Fatal(err)
+	}
+	request, err := f.service.SubmitWithOrigin(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionResume, "", "exec-partial")
+	if err != nil {
+		t.Fatalf("submit resume review: %v", err)
+	}
+	if request.OriginExecutionID != "exec-partial" {
+		t.Fatalf("resume origin was not snapshotted: %+v", request)
+	}
+	request, err = f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := contracts.ActiveHeadState{UnresolvedExecutionID: "exec-partial", UnresolvedReason: contracts.GateReasonPartial}
+	plan, err := f.service.Plan(context.Background(), f.users[0], request.ID, approvalEvidence{head: head}, "exec-resume")
+	if err != nil {
+		t.Fatalf("plan resume: %v", err)
+	}
+	if plan.OriginExecutionID != "exec-partial" {
+		t.Fatalf("plan origin mismatch: %+v", plan)
+	}
+	if err := f.service.Revalidate(context.Background(), plan, contracts.ActiveHeadState{}); !errors.Is(err, contracts.ErrExecutionGateBlocked) {
+		t.Fatalf("resume without unresolved gate = %v, want blocked", err)
+	}
+	if err := f.service.Revalidate(context.Background(), plan, head); err != nil {
+		t.Fatalf("revalidate resume with matching gate: %v", err)
+	}
+}
+
+func TestPostgresPlannerSealsApprovedApplyAndRevalidatesLiveSnapshot(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	request, err := f.service.Submit(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionApply, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err = f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum)
+	if err != nil || request.Status != "APPROVED" {
+		t.Fatalf("approval: %+v %v", request, err)
+	}
+	evidence := approvalEvidence{}
+	plan, err := f.service.Plan(context.Background(), f.users[0], request.ID, evidence, "exec-1")
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.Direction != contracts.DirectionApply || plan.MigrationID != contracts.MigrationID(d.ID) || plan.UpSQL != d.UpSQL || plan.DownSQL != d.DownSQL || plan.PlanChecksum != plan.ComputeChecksum() {
+		t.Fatalf("plan did not seal approved definition: %+v", plan)
+	}
+	if err := f.service.Revalidate(context.Background(), plan, contracts.ActiveHeadState{}); err != nil {
+		t.Fatalf("revalidate current snapshot: %v", err)
+	}
+	tampered := plan
+	tampered.UpSQL = "DROP TABLE users"
+	tampered.PlanChecksum = tampered.ComputeChecksum()
+	if err := f.service.Revalidate(context.Background(), tampered, contracts.ActiveHeadState{}); !errors.Is(err, contracts.ErrStaleApproval) {
+		t.Fatalf("revalidate modified SQL = %v, want stale approval", err)
+	}
+	if _, err := f.db.Exec(`UPDATE database_connections SET revision=revision+1 WHERE id=$1`, f.databaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.Revalidate(context.Background(), plan, contracts.ActiveHeadState{}); !errors.Is(err, contracts.ErrStaleApproval) {
+		t.Fatalf("revalidate after target change = %v, want stale approval", err)
+	}
+}
+
+func TestPostgresJobPublishRequiresApprovedRequestAndQueuesAtomically(t *testing.T) {
+	f := newApprovalFixture(t)
+	f.grant(t, f.groups[0], f.users[0], f.users[1], contracts.AccessViewEdit)
+	d := f.createDefinition(t)
+	request, err := f.service.Submit(context.Background(), f.users[0], f.databaseID, d.ID, d.Revision, contracts.DirectionApply, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Status = "APPROVED"
+	request.Requirements[0].Vote = &approval.Vote{ActorID: f.users[1], Decision: "APPROVE"}
+	plan, err := approval.BuildExecutionPlan(request, nil, contracts.ActiveHeadState{}, "exec-enqueue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := jobs.NewPostgresJobStore(f.db)
+	if _, err := store.Publish(context.Background(), jobs.PublishInput{Plan: plan, IdempotencyKey: "publish-before-approval"}); !errors.Is(err, contracts.ErrStaleApproval) {
+		t.Fatalf("publish pending request = %v, want stale approval", err)
+	}
+	request, err = f.service.Approve(context.Background(), f.users[1], request.ID, d.Revision, request.Round, f.groups[0], request.Checksum)
+	if err != nil || request.Status != "APPROVED" {
+		t.Fatalf("approve request: %+v %v", request, err)
+	}
+	job, err := store.Publish(context.Background(), jobs.PublishInput{Plan: plan, IdempotencyKey: "publish-after-approval"})
+	if err != nil || job.Status != contracts.JobStatusPending {
+		t.Fatalf("publish approved request: %+v %v", job, err)
+	}
+	var requestStatus, definitionState string
+	if err := f.db.QueryRow(`SELECT o.status,d.state FROM operation_requests o JOIN migration_definitions d ON d.id=o.migration_id WHERE o.id=$1`, request.ID).Scan(&requestStatus, &definitionState); err != nil {
+		t.Fatal(err)
+	}
+	if requestStatus != "QUEUED" || definitionState != "LOCKED" {
+		t.Fatalf("publish not atomic: request=%s definition=%s", requestStatus, definitionState)
+	}
+	replay, err := store.Publish(context.Background(), jobs.PublishInput{Plan: plan, IdempotencyKey: "publish-after-approval"})
+	if err != nil || replay.ID != job.ID {
+		t.Fatalf("idempotent publish replay: %+v %v", replay, err)
 	}
 }
 

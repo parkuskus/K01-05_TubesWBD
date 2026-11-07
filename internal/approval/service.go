@@ -19,6 +19,10 @@ type validator interface {
 	Validate(context.Context, contracts.UserID, contracts.DatabaseID, string) (definition.ValidationReport, error)
 }
 
+type operationValidator interface {
+	ValidateOperation(context.Context, contracts.UserID, contracts.DatabaseID, string, int) (definition.ValidationReport, error)
+}
+
 type Service struct {
 	db         *sql.DB
 	authorizer contracts.Authorizer
@@ -66,6 +70,10 @@ func approvalError(err error) error {
 }
 
 func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID contracts.DatabaseID, migrationID string, revision int, direction contracts.OperationDirection, expectedHead string) (Request, error) {
+	return s.SubmitWithOrigin(ctx, actor, databaseID, migrationID, revision, direction, expectedHead, "")
+}
+
+func (s *Service) SubmitWithOrigin(ctx context.Context, actor contracts.UserID, databaseID contracts.DatabaseID, migrationID string, revision int, direction contracts.OperationDirection, expectedHead, originExecutionID string) (Request, error) {
 	if _, err := idValue(string(actor)); err != nil {
 		return Request{}, contracts.ErrForbidden
 	}
@@ -74,13 +82,24 @@ func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID
 		return Request{}, contracts.ErrForbidden
 	}
 	migID, err := idValue(migrationID)
-	if err != nil || revision < 1 || !direction.IsValid() || len(expectedHead) > 128 {
+	if err != nil || revision < 1 || !direction.IsValid() || len(expectedHead) > 128 || len(originExecutionID) > 128 {
+		return Request{}, ErrInvalidInput
+	}
+	needsOrigin := direction == contracts.DirectionForward || direction == contracts.DirectionResume || direction == contracts.DirectionCompensate
+	if needsOrigin != (strings.TrimSpace(originExecutionID) != "") {
 		return Request{}, ErrInvalidInput
 	}
 	if err := s.authorizer.RequireDatabaseAccess(ctx, actor, databaseID, contracts.ActionCreateMigration); err != nil {
 		return Request{}, err
 	}
-	report, err := s.validator.Validate(ctx, actor, databaseID, migrationID)
+	var report definition.ValidationReport
+	if direction == contracts.DirectionApply {
+		report, err = s.validator.Validate(ctx, actor, databaseID, migrationID)
+	} else if validator, ok := s.validator.(operationValidator); ok {
+		report, err = validator.ValidateOperation(ctx, actor, databaseID, migrationID, revision)
+	} else {
+		return Request{}, ErrInvalidInput
+	}
 	if err != nil {
 		return Request{}, err
 	}
@@ -113,7 +132,8 @@ func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID
 	if err := tx.QueryRowContext(ctx, `SELECT d.state,d.current_revision,d.connection_revision,r.checksum FROM migration_definitions d JOIN migration_revisions r ON r.migration_id=d.id AND r.revision=d.current_revision WHERE d.id=$1 AND d.database_id=$2 FOR UPDATE OF d`, migID, dbID).Scan(&state, &currentRevision, &definitionConnectionRevision, &checksum); err != nil {
 		return Request{}, approvalError(err)
 	}
-	if state != "DRAFT" || currentRevision != revision || checksum != report.Checksum || definitionConnectionRevision != connectionRevision {
+	validState := state == "DRAFT" && direction == contracts.DirectionApply || state == "LOCKED" && direction != contracts.DirectionApply
+	if !validState || currentRevision != revision || checksum != report.Checksum || definitionConnectionRevision != connectionRevision {
 		return Request{}, ErrConflict
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT g.id,g.leader_user_id,a.level FROM group_database_access a JOIN groups g ON g.id=a.group_id WHERE a.database_id=$1 AND a.level IN (1,2) ORDER BY g.id`, dbID)
@@ -146,10 +166,10 @@ func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID
 		return Request{}, approvalError(err)
 	}
 	var requestID int64
-	if err := tx.QueryRowContext(ctx, `INSERT INTO operation_requests(database_id,migration_id,revision,direction,expected_head,connection_revision,policy_version,revision_checksum,checksum,status,review_round,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING_REVIEW',$10,$11) RETURNING id`, dbID, migID, revision, direction, expectedHead, connectionRevision, policyVersion, checksum, strings.Repeat("0", 64), round, actor).Scan(&requestID); err != nil {
+	if err := tx.QueryRowContext(ctx, `INSERT INTO operation_requests(database_id,migration_id,revision,direction,expected_head,origin_execution_id,connection_revision,policy_version,revision_checksum,checksum,status,review_round,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'PENDING_REVIEW',$11,$12) RETURNING id`, dbID, migID, revision, direction, expectedHead, originExecutionID, connectionRevision, policyVersion, checksum, strings.Repeat("0", 64), round, actor).Scan(&requestID); err != nil {
 		return Request{}, approvalError(err)
 	}
-	requestChecksum := checksumRequest(requestID, migID, revision, direction, expectedHead, connectionRevision, policyVersion, checksum, round, requirements)
+	requestChecksum := checksumRequest(requestID, migID, revision, direction, expectedHead, originExecutionID, connectionRevision, policyVersion, checksum, round, requirements)
 	if _, err := tx.ExecContext(ctx, `UPDATE operation_requests SET checksum=$2 WHERE id=$1`, requestID, requestChecksum); err != nil {
 		return Request{}, approvalError(err)
 	}
@@ -158,8 +178,10 @@ func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID
 			return Request{}, approvalError(err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE migration_definitions SET state='IN_REVIEW',updated_at=NOW() WHERE id=$1 AND state='DRAFT'`, migID); err != nil {
-		return Request{}, approvalError(err)
+	if direction == contracts.DirectionApply {
+		if _, err := tx.ExecContext(ctx, `UPDATE migration_definitions SET state='IN_REVIEW',updated_at=NOW() WHERE id=$1 AND state='DRAFT'`, migID); err != nil {
+			return Request{}, approvalError(err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return Request{}, approvalError(err)
@@ -167,9 +189,9 @@ func (s *Service) Submit(ctx context.Context, actor contracts.UserID, databaseID
 	return s.Get(ctx, actor, databaseID, contracts.OperationRequestID(strconv.FormatInt(requestID, 10)))
 }
 
-func checksumRequest(requestID, migrationID int64, revision int, direction contracts.OperationDirection, expectedHead string, connectionRevision, policyVersion int64, revisionChecksum string, round int, requirements []requirementSnapshot) string {
+func checksumRequest(requestID, migrationID int64, revision int, direction contracts.OperationDirection, expectedHead, originExecutionID string, connectionRevision, policyVersion int64, revisionChecksum string, round int, requirements []requirementSnapshot) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d\x00%d\x00%d\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d", requestID, migrationID, revision, direction, expectedHead, connectionRevision, policyVersion, revisionChecksum, round)
+	fmt.Fprintf(&b, "%d\x00%d\x00%d\x00%s\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d", requestID, migrationID, revision, direction, expectedHead, originExecutionID, connectionRevision, policyVersion, revisionChecksum, round)
 	for _, req := range requirements {
 		fmt.Fprintf(&b, "\x00%d:%d:%d", req.group, req.leader.Int64, req.level)
 	}
@@ -177,14 +199,14 @@ func checksumRequest(requestID, migrationID int64, revision int, direction contr
 	return hex.EncodeToString(sum[:])
 }
 
-const requestFields = `id::text,database_id::text,migration_id::text,revision,direction,expected_head,connection_revision,policy_version,revision_checksum,checksum,status,review_round,created_by::text,created_at`
+const requestFields = `id::text,database_id::text,migration_id::text,revision,direction,expected_head,origin_execution_id,connection_revision,policy_version,revision_checksum,checksum,status,review_round,created_by::text,created_at`
 
 func (s *Service) load(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, requestID string) (Request, error) {
 	var item Request
-	err := q.QueryRowContext(ctx, `SELECT `+requestFields+` FROM operation_requests WHERE id=$1`, requestID).Scan(&item.ID, &item.DatabaseID, &item.MigrationID, &item.Revision, &item.Direction, &item.ExpectedHead, &item.ConnectionRevision, &item.PolicyVersion, &item.RevisionChecksum, &item.Checksum, &item.Status, &item.Round, &item.CreatedBy, &item.CreatedAt)
+	err := q.QueryRowContext(ctx, `SELECT `+requestFields+` FROM operation_requests WHERE id=$1`, requestID).Scan(&item.ID, &item.DatabaseID, &item.MigrationID, &item.Revision, &item.Direction, &item.ExpectedHead, &item.OriginExecutionID, &item.ConnectionRevision, &item.PolicyVersion, &item.RevisionChecksum, &item.Checksum, &item.Status, &item.Round, &item.CreatedBy, &item.CreatedAt)
 	if err != nil {
 		return Request{}, approvalError(err)
 	}
@@ -270,7 +292,7 @@ func (s *Service) Approve(ctx context.Context, actor contracts.UserID, requestID
 	}
 	defer tx.Rollback()
 	var item Request
-	err = tx.QueryRowContext(ctx, `SELECT `+requestFields+` FROM operation_requests WHERE id=$1 FOR UPDATE`, request).Scan(&item.ID, &item.DatabaseID, &item.MigrationID, &item.Revision, &item.Direction, &item.ExpectedHead, &item.ConnectionRevision, &item.PolicyVersion, &item.RevisionChecksum, &item.Checksum, &item.Status, &item.Round, &item.CreatedBy, &item.CreatedAt)
+	err = tx.QueryRowContext(ctx, `SELECT `+requestFields+` FROM operation_requests WHERE id=$1 FOR UPDATE`, request).Scan(&item.ID, &item.DatabaseID, &item.MigrationID, &item.Revision, &item.Direction, &item.ExpectedHead, &item.OriginExecutionID, &item.ConnectionRevision, &item.PolicyVersion, &item.RevisionChecksum, &item.Checksum, &item.Status, &item.Round, &item.CreatedBy, &item.CreatedAt)
 	if err != nil {
 		return Request{}, approvalError(err)
 	}
@@ -344,14 +366,15 @@ func (s *Service) Approve(ctx context.Context, actor contracts.UserID, requestID
 		return Request{}, approvalError(err)
 	}
 	liveRequirements.Close()
-	stale := livePolicy != item.PolicyVersion || liveConnection != item.ConnectionRevision || state != "IN_REVIEW" || currentRevision != item.Revision || liveChecksum != item.RevisionChecksum || len(live) != len(requirements)
+	validState := state == "IN_REVIEW" && item.Direction == contracts.DirectionApply || state == "LOCKED" && item.Direction != contracts.DirectionApply
+	stale := livePolicy != item.PolicyVersion || liveConnection != item.ConnectionRevision || !validState || currentRevision != item.Revision || liveChecksum != item.RevisionChecksum || len(live) != len(requirements)
 	for i := range live {
 		if i >= len(requirements) || live[i] != requirements[i] {
 			stale = true
 			break
 		}
 	}
-	if checksumRequest(request, mustID(string(item.MigrationID)), item.Revision, item.Direction, string(item.ExpectedHead), item.ConnectionRevision, item.PolicyVersion, item.RevisionChecksum, item.Round, requirements) != item.Checksum {
+	if checksumRequest(request, mustID(string(item.MigrationID)), item.Revision, item.Direction, string(item.ExpectedHead), string(item.OriginExecutionID), item.ConnectionRevision, item.PolicyVersion, item.RevisionChecksum, item.Round, requirements) != item.Checksum {
 		stale = true
 	}
 	if stale {
@@ -416,4 +439,112 @@ func (s *Service) GetByID(ctx context.Context, actor contracts.UserID, requestID
 		return Request{}, approvalError(err)
 	}
 	return s.Get(ctx, actor, contracts.DatabaseID(databaseID), requestID)
+}
+
+// Plan returns a checksum-sealed plan only for a currently approved request and
+// the supplied read-only target evidence.
+func (s *Service) Plan(ctx context.Context, actor contracts.UserID, requestID contracts.OperationRequestID, evidence contracts.CommitEvidenceReader, executionID contracts.ExecutionID) (contracts.ExecutionPlan, error) {
+	if evidence == nil {
+		return contracts.ExecutionPlan{}, ErrInvalidInput
+	}
+	request, err := s.GetByID(ctx, actor, requestID)
+	if err != nil {
+		return contracts.ExecutionPlan{}, err
+	}
+	if request.CreatedBy != actor {
+		return contracts.ExecutionPlan{}, contracts.ErrForbidden
+	}
+	if err := s.authorizer.RequireDatabaseAccess(ctx, actor, request.DatabaseID, contracts.ActionCreateMigration); err != nil {
+		return contracts.ExecutionPlan{}, err
+	}
+	if err := s.checkLiveSnapshot(ctx, request); err != nil {
+		return contracts.ExecutionPlan{}, err
+	}
+	head, err := evidence.ActiveHead(ctx, request.DatabaseID)
+	if err != nil {
+		return contracts.ExecutionPlan{}, err
+	}
+	history, err := evidence.ListCommitHistory(ctx, request.DatabaseID)
+	if err != nil {
+		return contracts.ExecutionPlan{}, err
+	}
+	return BuildExecutionPlan(request, history, head, executionID)
+}
+
+// Revalidate checks the immutable request snapshot against live platform state
+// immediately before execution while the worker holds the target lock.
+func (s *Service) Revalidate(ctx context.Context, plan contracts.ExecutionPlan, currentHead contracts.ActiveHeadState) error {
+	if err := plan.Validate(); err != nil {
+		return err
+	}
+	request, err := s.load(ctx, s.db, string(plan.RequestID))
+	if err != nil {
+		return err
+	}
+	if request.Status != "APPROVED" && request.Status != "QUEUED" || request.ID != plan.RequestID || request.DatabaseID != plan.TargetDatabaseID || request.Migration.ID != string(plan.MigrationID) || plan.RevisionID != contracts.RevisionID(fmt.Sprintf("%s:%d", request.Migration.ID, request.Revision)) || request.Checksum == "" || request.CreatedBy != plan.ActorID || request.Direction != plan.Direction || request.OriginExecutionID != plan.OriginExecutionID || request.Migration.Version != plan.Version || contracts.ExecutionMode(request.Migration.Mode) != plan.Mode || request.Migration.UpSQL != plan.UpSQL || request.Migration.DownSQL != plan.DownSQL || request.Migration.Irreversible != plan.IsIrreversible || request.Migration.Reason != plan.IrreversibleReason {
+		return contracts.ErrStaleApproval
+	}
+	if plan.PlanChecksum != plan.ComputeChecksum() || plan.ExpectedActiveHead != request.ExpectedHead || plan.PolicyVersion != request.PolicyVersion || plan.TargetConnectionRevision != request.ConnectionRevision {
+		return contracts.ErrStaleApproval
+	}
+	if err := s.checkLiveSnapshot(ctx, request); err != nil {
+		return err
+	}
+	if currentHead.ExecutionID != plan.ExpectedActiveHead {
+		return contracts.ErrHeadMismatch
+	}
+	isRecovery := plan.Direction == contracts.DirectionResume || plan.Direction == contracts.DirectionCompensate
+	if isRecovery {
+		if currentHead.UnresolvedExecutionID == "" || currentHead.UnresolvedExecutionID != plan.OriginExecutionID || currentHead.UnresolvedReason != contracts.GateReasonPartial && currentHead.UnresolvedReason != contracts.GateReasonPartiallyReverted {
+			return contracts.ErrExecutionGateBlocked
+		}
+	} else if currentHead.UnresolvedReason != "" {
+		return contracts.ErrExecutionGateBlocked
+	}
+	return nil
+}
+
+func (s *Service) checkLiveSnapshot(ctx context.Context, request Request) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return approvalError(err)
+	}
+	defer tx.Rollback()
+	var policy, connection int64
+	var status string
+	var revision int
+	var checksum string
+	err = tx.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true FOR SHARE`).Scan(&policy)
+	if err == nil {
+		err = tx.QueryRowContext(ctx, `SELECT revision FROM database_connections WHERE id=$1 FOR SHARE`, request.DatabaseID).Scan(&connection)
+	}
+	if err == nil {
+		err = tx.QueryRowContext(ctx, `SELECT d.state,d.current_revision,r.checksum FROM migration_definitions d JOIN migration_revisions r ON r.migration_id=d.id AND r.revision=d.current_revision WHERE d.database_id=$1 AND d.id=$2 FOR SHARE OF d`, request.DatabaseID, request.MigrationID).Scan(&status, &revision, &checksum)
+	}
+	if err != nil {
+		return approvalError(err)
+	}
+	if policy != request.PolicyVersion || connection != request.ConnectionRevision || revision != request.Revision || checksum != request.RevisionChecksum || status != "IN_REVIEW" && status != "LOCKED" {
+		return contracts.ErrStaleApproval
+	}
+	requirements := make([]requirementSnapshot, 0, len(request.Requirements))
+	for _, item := range request.Requirements {
+		groupID, groupErr := idValue(string(item.GroupID))
+		leaderID, leaderErr := idValue(string(item.LeaderUserID))
+		if groupErr != nil || leaderErr != nil {
+			return contracts.ErrStaleApproval
+		}
+		requirements = append(requirements, requirementSnapshot{group: groupID, leader: sql.NullInt64{Int64: leaderID, Valid: true}, level: int(item.GrantLevel)})
+	}
+	if checksumRequest(mustID(string(request.ID)), mustID(string(request.MigrationID)), request.Revision, request.Direction, string(request.ExpectedHead), string(request.OriginExecutionID), request.ConnectionRevision, request.PolicyVersion, request.RevisionChecksum, request.Round, requirements) != request.Checksum {
+		return contracts.ErrStaleApproval
+	}
+	var missing int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM approval_requirements r JOIN operation_requests o ON o.id=r.request_id LEFT JOIN approval_votes v ON v.request_id=r.request_id AND v.review_round=o.review_round AND v.group_id=r.group_id WHERE r.request_id=$1 AND (v.actor_id IS NULL OR v.actor_id<>r.leader_user_id OR v.decision<>'APPROVE' OR v.migration_revision<>o.revision OR v.checksum<>o.checksum)`, request.ID).Scan(&missing); err != nil {
+		return approvalError(err)
+	}
+	if missing != 0 {
+		return contracts.ErrStaleApproval
+	}
+	return approvalError(tx.Commit())
 }

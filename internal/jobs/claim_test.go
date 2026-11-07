@@ -425,16 +425,18 @@ func TestClaimAndRetryIntegrationPostgres(t *testing.T) {
 	now := time.Date(2026, 11, 4, 17, 0, 0, 0, time.UTC)
 	store := NewPostgresJobStore(db).WithClock(func() time.Time { return now })
 
+	planA := seedApprovedQueueRequest(t, ctx, db, planForDatabase("pg-req-a", "pg-exec-a", "db-A"))
 	jobA, err := store.Publish(ctx, PublishInput{
-		Plan:           planForDatabase("pg-req-a", "pg-exec-a", "db-A"),
+		Plan:           planA,
 		IdempotencyKey: "pg-claim-a",
 		MaxRetries:     1,
 	})
 	if err != nil {
 		t.Fatalf("Publish jobA: %v", err)
 	}
+	planB := seedApprovedQueueRequest(t, ctx, db, planForDatabase("pg-req-b", "pg-exec-b", "db-B"))
 	jobB, err := store.Publish(ctx, PublishInput{
-		Plan:           planForDatabase("pg-req-b", "pg-exec-b", "db-B"),
+		Plan:           planB,
 		IdempotencyKey: "pg-claim-b",
 		MaxRetries:     1,
 	})
@@ -451,4 +453,3 @@ func TestClaimAndRetryIntegrationPostgres(t *testing.T) {
 		t.Fatalf("ClaimNextDue #2 = %+v, %v; want %s", cB, err, jobB.ID)
 	}
 }
-

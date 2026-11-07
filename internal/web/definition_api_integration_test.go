@@ -66,7 +66,7 @@ func TestPostgresDefinitionAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approvalHandler, err := api.NewApprovalHandler(approvals, sessions)
+	approvalHandler, err := api.NewApprovalHandler(approvals, sessions, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

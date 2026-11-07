@@ -284,4 +284,3 @@ type CommitEvidenceReader interface {
 	ListCommitHistory(ctx context.Context, databaseID DatabaseID) ([]CommitHistoryEvent, error)
 	BatchProgress(ctx context.Context, databaseID DatabaseID, executionID ExecutionID) (BatchCheckpointState, error)
 }
-

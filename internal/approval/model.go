@@ -38,6 +38,7 @@ type Request struct {
 	Revision           int                          `json:"revision"`
 	Direction          contracts.OperationDirection `json:"direction"`
 	ExpectedHead       contracts.ExecutionID        `json:"expected_head"`
+	OriginExecutionID  contracts.ExecutionID        `json:"origin_execution_id,omitempty"`
 	ConnectionRevision int64                        `json:"connection_revision"`
 	PolicyVersion      int64                        `json:"policy_version"`
 	RevisionChecksum   string                       `json:"-"`

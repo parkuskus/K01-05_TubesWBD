@@ -20,10 +20,12 @@ import (
 )
 
 type fakeJobsDB struct {
-	mu       sync.Mutex
-	rows     []fakeJobRecord
-	attempts []fakeAttemptRecord
-	gates    map[string]string
+	mu              sync.Mutex
+	rows            []fakeJobRecord
+	attempts        []fakeAttemptRecord
+	gates           map[string]string
+	operationStatus string
+	definitionState string
 }
 
 type fakeJobRecord struct {
@@ -86,10 +88,12 @@ type fakeJobsDriver struct{}
 func (fakeJobsDriver) Open(string) (driver.Conn, error) { return nil, errors.New("unused") }
 
 type fakeJobsConn struct {
-	db             *fakeJobsDB
-	inTx           bool
-	staged         []fakeJobRecord
-	stagedAttempts []fakeAttemptRecord
+	db                    *fakeJobsDB
+	inTx                  bool
+	staged                []fakeJobRecord
+	stagedAttempts        []fakeAttemptRecord
+	stagedOperationStatus string
+	stagedDefinitionState string
 }
 
 func (c *fakeJobsConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unused") }
@@ -100,6 +104,8 @@ func (c *fakeJobsConn) Begin() (driver.Tx, error) {
 	c.inTx = true
 	c.staged = append([]fakeJobRecord(nil), c.db.rows...)
 	c.stagedAttempts = append([]fakeAttemptRecord(nil), c.db.attempts...)
+	c.stagedOperationStatus = c.db.operationStatus
+	c.stagedDefinitionState = c.db.definitionState
 	return &fakeJobsTx{conn: c}, nil
 }
 
@@ -111,8 +117,12 @@ func (tx *fakeJobsTx) Commit() error {
 	if tx.conn.inTx {
 		tx.conn.db.rows = tx.conn.staged
 		tx.conn.db.attempts = tx.conn.stagedAttempts
+		tx.conn.db.operationStatus = tx.conn.stagedOperationStatus
+		tx.conn.db.definitionState = tx.conn.stagedDefinitionState
 		tx.conn.staged = nil
 		tx.conn.stagedAttempts = nil
+		tx.conn.stagedOperationStatus = ""
+		tx.conn.stagedDefinitionState = ""
 		tx.conn.inTx = false
 		tx.conn.db.mu.Unlock()
 	}
@@ -123,6 +133,8 @@ func (tx *fakeJobsTx) Rollback() error {
 	if tx.conn.inTx {
 		tx.conn.staged = nil
 		tx.conn.stagedAttempts = nil
+		tx.conn.stagedOperationStatus = ""
+		tx.conn.stagedDefinitionState = ""
 		tx.conn.inTx = false
 		tx.conn.db.mu.Unlock()
 	}
@@ -132,6 +144,13 @@ func (tx *fakeJobsTx) Rollback() error {
 func (c *fakeJobsConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	trimmed := strings.TrimSpace(query)
 	switch {
+	case strings.HasPrefix(trimmed, "UPDATE operation_requests SET status='QUEUED'"):
+		c.stagedOperationStatus = "QUEUED"
+		return driver.RowsAffected(1), nil
+
+	case strings.HasPrefix(trimmed, "UPDATE migration_definitions SET state='LOCKED'"):
+		c.stagedDefinitionState = "LOCKED"
+		return driver.RowsAffected(1), nil
 	case strings.HasPrefix(trimmed, "SELECT pg_advisory_xact_lock"):
 		return driver.RowsAffected(1), nil
 
@@ -188,6 +207,25 @@ func (c *fakeJobsConn) ExecContext(_ context.Context, query string, args []drive
 func (c *fakeJobsConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	trimmed := strings.TrimSpace(query)
 	switch {
+	case strings.HasPrefix(trimmed, "SELECT status,database_id::text,migration_id::text,revision,direction,expected_head"):
+		return &fakeValueRows{columns: []string{"status", "database_id", "migration_id", "revision", "direction", "expected_head", "origin_execution_id", "connection_revision", "policy_version", "revision_checksum", "checksum", "review_round", "created_by"}, values: []driver.Value{"APPROVED", args[1].Value.(string), args[2].Value.(string), args[3].Value, args[4].Value.(string), args[5].Value.(string), args[6].Value.(string), args[7].Value, args[8].Value, strings.Repeat("a", 64), strings.Repeat("b", 64), int64(1), args[9].Value.(string)}}, nil
+
+	case strings.HasPrefix(trimmed, "SELECT version FROM platform_policy_version"):
+		return &fakeSingleValRows{col: "version", val: int64(1)}, nil
+
+	case strings.HasPrefix(trimmed, "SELECT revision FROM database_connections WHERE id=$1 FOR SHARE"):
+		return &fakeSingleValRows{col: "revision", val: int64(2)}, nil
+
+	case strings.HasPrefix(trimmed, "SELECT d.current_revision,d.state,r.checksum"):
+		state := "LOCKED"
+		if args[2].Value.(string) == "APPLY" {
+			state = "IN_REVIEW"
+		}
+		return &fakeValueRows{columns: []string{"current_revision", "state", "checksum"}, values: []driver.Value{int64(1), state, strings.Repeat("a", 64)}}, nil
+
+	case strings.HasPrefix(trimmed, "SELECT count(*),count(*) FILTER"):
+		return &fakeValueRows{columns: []string{"count", "count"}, values: []driver.Value{int64(1), int64(1)}}, nil
+
 	case strings.HasPrefix(trimmed, "SELECT to_regclass('database_execution_gates')"):
 		if len(c.db.gates) > 0 {
 			return &fakeSingleValRows{col: "to_regclass", val: "database_execution_gates"}, nil
@@ -465,6 +503,23 @@ type fakeSingleValRows struct {
 	done  bool
 }
 
+type fakeValueRows struct {
+	columns []string
+	values  []driver.Value
+	done    bool
+}
+
+func (r *fakeValueRows) Columns() []string { return r.columns }
+func (*fakeValueRows) Close() error        { return nil }
+func (r *fakeValueRows) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	r.done = true
+	copy(dest, r.values)
+	return nil
+}
+
 func (r *fakeSingleValRows) Columns() []string { return []string{r.col} }
 func (r *fakeSingleValRows) Close() error      { return nil }
 func (r *fakeSingleValRows) Next(dest []driver.Value) error {
@@ -570,7 +625,7 @@ func sampleExecutionPlan() contracts.ExecutionPlan {
 		RequestID:                "req-100",
 		ExecutionID:              "exec-100",
 		MigrationID:              "mig-100",
-		RevisionID:               "rev-1",
+		RevisionID:               "mig-100:1",
 		Version:                  1,
 		Direction:                contracts.DirectionApply,
 		Mode:                     contracts.ModeNormal,
@@ -582,6 +637,64 @@ func sampleExecutionPlan() contracts.ExecutionPlan {
 		UpSQL:                    "CREATE TABLE invoices (id BIGINT PRIMARY KEY);",
 		DownSQL:                  "DROP TABLE invoices;",
 	}
+	plan.PlanChecksum = plan.ComputeChecksum()
+	return plan
+}
+
+func seedApprovedQueueRequest(t *testing.T, ctx context.Context, db *sql.DB, plan contracts.ExecutionPlan) contracts.ExecutionPlan {
+	t.Helper()
+	var actorID, databaseID, groupID, migrationID, policyVersion int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO users(username,password_hash) VALUES($1,'hash') RETURNING id`, "job-test-"+time.Now().Format("150405.000000000")).Scan(&actorID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO database_connections(name,host,port,database_name,username,ssl_mode,password_ciphertext) VALUES($1,'localhost',5432,'target','test','disable',$2) RETURNING id`, "job-target-"+time.Now().Format("150405.000000000"), make([]byte, 29)).Scan(&databaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO groups(name) VALUES($1) RETURNING id`, "job-group-"+time.Now().Format("150405.000000000")).Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO group_memberships(group_id,user_id) VALUES($1,$2)`, groupID, actorID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE groups SET leader_user_id=$2 WHERE id=$1`, groupID, actorID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true`).Scan(&policyVersion); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRowContext(ctx, `INSERT INTO migration_definitions(database_id,connection_revision,version,title,state,created_by) VALUES($1,1,1,'job test','DRAFT',$2) RETURNING id`, databaseID, actorID).Scan(&migrationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO migration_revisions(migration_id,revision,up_sql,down_sql,irreversible,reason,mode,batch_plan,checksum) VALUES($1,1,$2,'SELECT 2',false,'','NORMAL','{}',repeat('a',64))`, migrationID, plan.UpSQL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE migration_definitions SET state='IN_REVIEW' WHERE id=$1`, migrationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var requestID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO operation_requests(database_id,migration_id,revision,direction,expected_head,origin_execution_id,connection_revision,policy_version,revision_checksum,checksum,status,review_round,created_by) VALUES($1,$2,1,$3,$4,$5,1,$6,repeat('a',64),repeat('b',64),'APPROVED',1,$7) RETURNING id`, databaseID, migrationID, plan.Direction, plan.ExpectedActiveHead, plan.OriginExecutionID, policyVersion, actorID).Scan(&requestID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO approval_requirements(request_id,group_id,leader_user_id,grant_level) VALUES($1,$2,$3,2)`, requestID, groupID, actorID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO approval_votes(request_id,review_round,group_id,migration_revision,checksum,actor_id,decision) VALUES($1,1,$2,1,repeat('b',64),$3,'APPROVE')`, requestID, groupID, actorID); err != nil {
+		t.Fatal(err)
+	}
+	plan.RequestID = contracts.OperationRequestID(fmt.Sprint(requestID))
+	plan.MigrationID = contracts.MigrationID(fmt.Sprint(migrationID))
+	plan.RevisionID = contracts.RevisionID(fmt.Sprintf("%d:1", migrationID))
+	plan.TargetDatabaseID = contracts.DatabaseID(fmt.Sprint(databaseID))
+	plan.ActorID = contracts.UserID(fmt.Sprint(actorID))
+	plan.TargetConnectionRevision = 1
+	plan.PolicyVersion = policyVersion
 	plan.PlanChecksum = plan.ComputeChecksum()
 	return plan
 }
@@ -740,7 +853,7 @@ func TestPublishIntegrationPostgres(t *testing.T) {
 	}
 
 	store := NewPostgresJobStore(db)
-	plan := sampleExecutionPlan()
+	plan := seedApprovedQueueRequest(t, ctx, db, sampleExecutionPlan())
 
 	job1, err := store.Publish(ctx, PublishInput{
 		Plan:           plan,

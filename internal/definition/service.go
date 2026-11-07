@@ -209,6 +209,35 @@ func (s *Service) Validate(ctx context.Context, actor contracts.UserID, id contr
 	return report, nil
 }
 
+// ValidateOperation validates a saved revision for a review request, including
+// revisions locked by a prior execution attempt.
+func (s *Service) ValidateOperation(ctx context.Context, actor contracts.UserID, id contracts.DatabaseID, definitionID string, revision int) (ValidationReport, error) {
+	if err := s.require(ctx, actor, id, contracts.ActionEditMigration); err != nil {
+		return ValidationReport{}, err
+	}
+	d, err := s.Get(ctx, actor, id, definitionID)
+	if err != nil {
+		return ValidationReport{}, err
+	}
+	report := ValidateInput(d.Input)
+	report.MigrationID, report.Revision, report.Checksum = d.ID, d.Revision, d.Checksum
+	if (d.State != "DRAFT" && d.State != "LOCKED") || d.Revision != revision {
+		report.Errors = append(report.Errors, ValidationIssue{Code: "INVALID_STATE", Message: "Only the saved current draft or locked revision can be reviewed."})
+	}
+	if d.Checksum != checksum(d.DatabaseID, d.ConnectionRevision, d.Input) {
+		report.Errors = append(report.Errors, ValidationIssue{Code: "CHECKSUM_MISMATCH", Message: "Stored definition checksum does not match its revision."})
+	}
+	var connectionRevision int64
+	if err := s.db.QueryRowContext(ctx, `SELECT revision FROM database_connections WHERE id=$1`, id).Scan(&connectionRevision); err != nil {
+		return ValidationReport{}, storeError(err)
+	}
+	if connectionRevision != d.ConnectionRevision {
+		report.Errors = append(report.Errors, ValidationIssue{Code: "STALE_CONNECTION_REVISION", Message: "Target connection changed after this definition was created; create a new draft."})
+	}
+	report.Valid = len(report.Errors) == 0
+	return report, nil
+}
+
 // MarkAttempted must commit before sending any plan to an executor, including attempts that fail.
 func (s *Service) MarkAttempted(ctx context.Context, definitionID string, revision int) error {
 	if !validID(definitionID) || revision < 1 {
