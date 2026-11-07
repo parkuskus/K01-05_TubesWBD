@@ -18,7 +18,7 @@ const connection = {
   port: 5432,
   database: "inventory",
   username: "developer",
-  sslmode: "require",
+  ssl_mode: "require",
 };
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -58,7 +58,7 @@ it("edits a connection without including an empty password and refreshes the lis
     port: 5432,
     database: "inventory",
     username: "developer",
-    sslmode: "require",
+    ssl_mode: "require",
   });
   expect(fetcher.mock.calls.filter(([, init]) => !init.method)).toHaveLength(2);
 });

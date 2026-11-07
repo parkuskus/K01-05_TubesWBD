@@ -69,6 +69,18 @@ export function ResourceError({ error, retry }: { error: unknown; retry: () => u
 
 export function mutationMessage(error: unknown) {
   if (error instanceof ApiError) {
+    if (["APPROVAL_STALE", "STALE_APPROVAL"].includes(error.code))
+      return "Approval kedaluwarsa karena revisi atau kebijakan berubah. Muat ulang dan ajukan review baru.";
+    if (["HEAD_MISMATCH", "EXPECTED_HEAD_CONFLICT"].includes(error.code))
+      return "Posisi migration aktif berubah. Muat ulang dan periksa urutan migration.";
+    if (["REVISION_CONFLICT", "IMMUTABLE_MIGRATION"].includes(error.code))
+      return "Revisi berubah atau SQL sudah pernah dieksekusi. Periksa revisi terbaru; perbaikan SQL memerlukan migration baru.";
+    if (error.code === "IRREVERSIBLE_MIGRATION")
+      return "Migration irreversible tidak dapat di-rollback atau dikompensasi.";
+    if (error.code === "EXECUTION_GATE_BLOCKED")
+      return "Database tertahan oleh eksekusi yang belum terselesaikan. Periksa job dan pemulihannya.";
+    if (error.code === "UNSAFE_BATCH_COMPENSATION")
+      return "Kompensasi tidak aman karena data berubah. Buat migration perbaikan baru dan ajukan review.";
     if (error.code === "LAST_ADMIN")
       return "Administrator terakhir tidak dapat dihapus atau diturunkan hak aksesnya.";
     if (error.code === "LEADER_REQUIRED" || error.code === "LEADER_REMOVAL")

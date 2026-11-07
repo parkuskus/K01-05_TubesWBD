@@ -27,8 +27,8 @@ afterEach(() => {
 
 it("loads authorized databases and combines name and access filters", async () => {
   const records = [
-    { id: "1", name: "primary", access_level: 2, capabilities: { create_migration: true } },
-    { id: "2", name: "reporting", access_level: 1, capabilities: { create_migration: false } },
+    { id: "1", name: "primary", level: 2 },
+    { id: "2", name: "reporting", level: 1 },
   ];
   vi.stubGlobal(
     "fetch",

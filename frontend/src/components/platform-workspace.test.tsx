@@ -139,11 +139,15 @@ function groupTransport() {
       return Promise.resolve(
         Response.json({
           data: {
-            group: { id: "7", name: "Team", leader_id: leader },
-            members: users.slice(0, 2),
-            grants: [{ database_id: "99", level: 1 }],
+            group: { id: "7", name: "Team", leader_user_id: leader },
           },
         }),
+      );
+    if (path === "/api/v1/groups/7/members")
+      return Promise.resolve(Response.json({ data: { members: users.slice(0, 2) } }));
+    if (path === "/api/v1/groups/7/grants")
+      return Promise.resolve(
+        Response.json({ data: { grants: [{ database_id: "99", level: 1 }] } }),
       );
     if (path === "/api/v1/users") return Promise.resolve(Response.json({ data: { users } }));
     if (path === "/api/v1/connections")
@@ -210,7 +214,7 @@ it("creates a group with no invented leader and links to its detail page", async
       Promise.resolve(
         init.method === "POST"
           ? new Response(null, { status: 204 })
-          : Response.json({ data: { groups: [{ id: "7", name: "Team", leader_id: null }] } }),
+          : Response.json({ data: { groups: [{ id: "7", name: "Team", leader_user_id: null }] } }),
       ),
     );
   vi.stubGlobal("fetch", fetcher);
