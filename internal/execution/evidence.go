@@ -2,7 +2,6 @@ package execution
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -73,20 +72,7 @@ func (r *TargetCommitEvidenceReader) BatchProgress(ctx context.Context, database
 	if err != nil {
 		return contracts.BatchCheckpointState{}, err
 	}
-	var state contracts.BatchCheckpointState
-	var cursor int64
-	err = pool.QueryRowContext(ctx, `SELECT execution_id,total_rows,committed_batches,committed_rows,last_cursor,compensated_batches,last_compensated_batch,updated_at FROM if3110_platform.batch_checkpoints WHERE execution_id=$1`, executionID).Scan(&state.ExecutionID, &state.TotalScopeRows, &state.CommittedBatches, &state.CommittedRows, &cursor, &state.CompensatedBatches, &state.LastCompensatedBatch, &state.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return contracts.BatchCheckpointState{}, nil
-	}
-	if err != nil {
-		if IsMissingTargetSchemaError(err) {
-			return contracts.BatchCheckpointState{}, nil
-		}
-		return contracts.BatchCheckpointState{}, fmt.Errorf("read target batch progress: %w", err)
-	}
-	state.LastCommittedCursor = fmt.Sprint(cursor)
-	return state, nil
+	return ReadBatchProgress(ctx, pool, executionID)
 }
 
 var _ contracts.CommitEvidenceReader = (*TargetCommitEvidenceReader)(nil)

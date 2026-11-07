@@ -221,9 +221,9 @@ func (e *OrdinaryExecutor) Execute(ctx context.Context, env ExecutionEnv) (Execu
 	}
 
 	// 3. Execute the immutable user SQL inside the target transaction.
-	execRes, execErr := tx.ExecContext(ctx, sqlToRun)
+	_, affectedRows, execErr := execUserSQLWithTelemetry(ctx, tx, sqlToRun)
 	if execErr != nil {
-		_ = tx.Rollback()
+		rollbackTxWithTelemetry(ctx, tx, sqlToRun, execErr)
 		return ExecutionResult{
 			JobStatus:          contracts.JobStatusFailed,
 			AttemptStatus:      contracts.AttemptStatusRolledBack,
@@ -232,13 +232,6 @@ func (e *OrdinaryExecutor) Execute(ctx context.Context, env ExecutionEnv) (Execu
 			ErrorMessage:       SanitizeExecutionError(execErr),
 			TransientRetryable: IsTransientPreCommitError(execErr),
 		}, nil
-	}
-
-	var affectedRows int64
-	if execRes != nil {
-		if n, err := execRes.RowsAffected(); err == nil && n > 0 {
-			affectedRows = n
-		}
 	}
 
 	now := time.Now().UTC()
@@ -361,7 +354,7 @@ func (e *OrdinaryExecutor) Execute(ctx context.Context, env ExecutionEnv) (Execu
 		}, nil
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := commitTxWithTelemetry(ctx, tx, sqlToRun, affectedRows); err != nil {
 		switch ClassifyCommitError(err) {
 		case ErrorCategoryPermanent:
 			return ExecutionResult{

@@ -529,3 +529,150 @@ func (w *Worker) startHeartbeatLoop(
 	}
 }
 
+// DispatchExecutor routes NORMAL plans to OrdinaryExecutor and BATCH plans to
+// BatchExecutor, wrapped inside RecoveryExecutor so interrupted attempts are
+// reconciled from target commit proofs before executing SQL.
+type DispatchExecutor struct {
+	ordinary *OrdinaryExecutor
+	batch    *BatchExecutor
+}
+
+// NewDispatchExecutor creates a PlanExecutor that handles both NORMAL and BATCH
+// execution modes with commit-proof recovery and execution gate management.
+func NewDispatchExecutor(gates GateStore, progress JobProgressUpdater) PlanExecutor {
+	router := &DispatchExecutor{
+		ordinary: NewOrdinaryExecutor(),
+		batch:    NewBatchExecutor(gates, progress),
+	}
+	return NewRecoveryExecutor(router, gates)
+}
+
+// Execute implements PlanExecutor by dispatching on plan.Mode.
+func (d *DispatchExecutor) Execute(ctx context.Context, env ExecutionEnv) (ExecutionResult, error) {
+	if d == nil {
+		return ExecutionResult{}, errors.New("dispatch executor is nil")
+	}
+	switch env.Claimed.Job.Plan.Mode {
+	case contracts.ModeBatch:
+		return d.batch.Execute(ctx, env)
+	default:
+		return d.ordinary.Execute(ctx, env)
+	}
+}
+
+// PlatformRevalidator implements contracts.OperationRevalidator by verifying
+// actor database permissions, platform execution gates, expected active head,
+// and approval/policy validity right before SQL execution under the target lock.
+type PlatformRevalidator struct {
+	platformDB *sql.DB
+	authorizer contracts.Authorizer
+	gates      GateStore
+}
+
+var _ contracts.OperationRevalidator = (*PlatformRevalidator)(nil)
+
+// NewPlatformRevalidator creates a PlatformRevalidator backed by the platform
+// database, authorizer, and execution gate store.
+func NewPlatformRevalidator(
+	platformDB *sql.DB,
+	authorizer contracts.Authorizer,
+	gates GateStore,
+) *PlatformRevalidator {
+	return &PlatformRevalidator{
+		platformDB: platformDB,
+		authorizer: authorizer,
+		gates:      gates,
+	}
+}
+
+// Revalidate verifies that the queued operation remains authorized, unblocked,
+// and aligned with the target database's active head and approval policy.
+func (r *PlatformRevalidator) Revalidate(
+	ctx context.Context,
+	plan contracts.ExecutionPlan,
+	currentHead contracts.ActiveHeadState,
+) error {
+	if err := plan.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", contracts.ErrStaleApproval, err)
+	}
+
+	if r != nil && r.authorizer != nil {
+		if err := r.authorizer.RequireDatabaseAccess(ctx, plan.ActorID, plan.TargetDatabaseID, contracts.ActionRunMigration); err != nil {
+			if errors.Is(err, contracts.ErrForbidden) {
+				return contracts.ErrStaleApproval
+			}
+			return err
+		}
+	}
+
+	if r != nil && r.gates != nil {
+		gateRec, exists, err := r.gates.GetGate(ctx, plan.TargetDatabaseID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			isRecovery := (plan.Direction == contracts.DirectionResume || plan.Direction == contracts.DirectionCompensate) &&
+				(gateRec.Reason == contracts.GateReasonPartial || gateRec.Reason == contracts.GateReasonPartiallyReverted) &&
+				(gateRec.ExecutionID == "" || gateRec.ExecutionID == plan.OriginExecutionID)
+			if !isRecovery {
+				return contracts.ErrExecutionGateBlocked
+			}
+		}
+	}
+
+	switch plan.Direction {
+	case contracts.DirectionApply, contracts.DirectionRollback, contracts.DirectionForward:
+		if currentHead.ExecutionID != plan.ExpectedActiveHead {
+			return contracts.ErrHeadMismatch
+		}
+	}
+
+	if r != nil && r.platformDB != nil {
+		if err := r.checkPlatformPolicyAndRequest(ctx, plan); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *PlatformRevalidator) checkPlatformPolicyAndRequest(ctx context.Context, plan contracts.ExecutionPlan) error {
+	var policyTable sql.NullString
+	if err := r.platformDB.QueryRowContext(ctx, `SELECT to_regclass('database_approval_policies')`).Scan(&policyTable); err == nil &&
+		policyTable.Valid && strings.TrimSpace(policyTable.String) != "" {
+		var currentPolicyVersion int64
+		err := r.platformDB.QueryRowContext(
+			ctx,
+			`SELECT policy_version FROM database_approval_policies WHERE database_id = $1`,
+			string(plan.TargetDatabaseID),
+		).Scan(&currentPolicyVersion)
+		if err == nil && currentPolicyVersion != plan.PolicyVersion {
+			return contracts.ErrStaleApproval
+		}
+	}
+
+	var reqTable sql.NullString
+	if err := r.platformDB.QueryRowContext(ctx, `SELECT to_regclass('operation_requests')`).Scan(&reqTable); err == nil &&
+		reqTable.Valid && strings.TrimSpace(reqTable.String) != "" {
+		var status string
+		err := r.platformDB.QueryRowContext(
+			ctx,
+			`SELECT status FROM operation_requests WHERE id = $1`,
+			string(plan.RequestID),
+		).Scan(&status)
+		if errors.Is(err, sql.ErrNoRows) {
+			return contracts.ErrStaleApproval
+		}
+		if err == nil {
+			upper := strings.ToUpper(strings.TrimSpace(status))
+			switch upper {
+			case "INVALIDATED", "REJECTED", "CANCELED", "CANCELLED", "STALE", "PENDING_APPROVAL", "DRAFT":
+				return contracts.ErrStaleApproval
+			}
+		}
+	}
+
+	return nil
+}
+
+

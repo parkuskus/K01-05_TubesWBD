@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -448,3 +449,61 @@ func TestWorkerTargetLockBusySchedulesRetryWithoutExecutingSQL(t *testing.T) {
 		t.Fatalf("job-busy status=%s code=%s, want RETRY_WAIT and TARGET_LOCK_BUSY", got.Status, got.LastErrorCode)
 	}
 }
+
+type stubAuthorizer struct {
+	forbiddenActors map[contracts.UserID]bool
+}
+
+func (a stubAuthorizer) RequirePlatformAdmin(context.Context, contracts.UserID) error {
+	return nil
+}
+
+func (a stubAuthorizer) RequireDatabaseAccess(_ context.Context, userID contracts.UserID, _ contracts.DatabaseID, _ contracts.DatabaseAction) error {
+	if a.forbiddenActors[userID] {
+		return contracts.ErrForbidden
+	}
+	return nil
+}
+
+func TestPlatformRevalidatorVerifiesAuthorizerGateAndHead(t *testing.T) {
+	ctx := context.Background()
+	gates := newMemoryGateStore()
+	authz := stubAuthorizer{
+		forbiddenActors: map[contracts.UserID]bool{
+			"user-revoked": true,
+		},
+	}
+	reval := NewPlatformRevalidator(nil, authz, gates)
+
+	validJob := makeTestJob("job-ok", "db-1", "exec-head-1")
+	if err := reval.Revalidate(ctx, validJob.Plan, contracts.ActiveHeadState{ExecutionID: "exec-head-1"}); err != nil {
+		t.Fatalf("Revalidate(valid) error = %v, want nil", err)
+	}
+
+	// Revoked actor access -> ErrStaleApproval
+	revokedJob := makeTestJob("job-revoked", "db-1", "exec-head-1")
+	revokedJob.Plan.ActorID = "user-revoked"
+	revokedJob.Plan.PlanChecksum = revokedJob.Plan.ComputeChecksum()
+	if err := reval.Revalidate(ctx, revokedJob.Plan, contracts.ActiveHeadState{ExecutionID: "exec-head-1"}); !errors.Is(err, contracts.ErrStaleApproval) {
+		t.Fatalf("Revalidate(revoked actor) error = %v, want ErrStaleApproval", err)
+	}
+
+	// Head mismatch -> ErrHeadMismatch
+	if err := reval.Revalidate(ctx, validJob.Plan, contracts.ActiveHeadState{ExecutionID: "exec-other"}); !errors.Is(err, contracts.ErrHeadMismatch) {
+		t.Fatalf("Revalidate(head mismatch) error = %v, want ErrHeadMismatch", err)
+	}
+
+	// Platform execution gate -> ErrExecutionGateBlocked for normal APPLY, but allowed for matching RESUME/COMPENSATE.
+	_ = gates.SetGate(ctx, "db-1", "exec-partial-1", "job-partial-1", contracts.GateReasonPartial, "partial halt")
+	if err := reval.Revalidate(ctx, validJob.Plan, contracts.ActiveHeadState{ExecutionID: "exec-head-1"}); !errors.Is(err, contracts.ErrExecutionGateBlocked) {
+		t.Fatalf("Revalidate(gated APPLY) error = %v, want ErrExecutionGateBlocked", err)
+	}
+
+	resumePlan := sampleBatchPlan(contracts.DirectionResume)
+	resumePlan.OriginExecutionID = "exec-partial-1"
+	resumePlan.PlanChecksum = resumePlan.ComputeChecksum()
+	if err := reval.Revalidate(ctx, resumePlan, contracts.ActiveHeadState{ExecutionID: "exec-head-1"}); err != nil {
+		t.Fatalf("Revalidate(matching RESUME on PARTIAL gate) error = %v, want nil", err)
+	}
+}
+
