@@ -32,10 +32,11 @@ type fakeBatchEngineDB struct {
 	proofs                map[string]ExecutionCommitProof
 	history               []contracts.CommitHistoryEvent
 	head                  contracts.ActiveHeadState
-	txCommitCount         int
-	failOnBatchNo         int
-	failBatchErr          error
-	compensatedBatchOrder []int
+	txCommitCount           int
+	failOnBatchNo           int
+	failOnCheckpointBatchNo int
+	failBatchErr            error
+	compensatedBatchOrder   []int
 
 	inTx               bool
 	stagedTableRows    map[int64]fakeBatchRowData
@@ -293,6 +294,10 @@ func (c *fakeBatchEngineConn) ExecContext(_ context.Context, query string, args 
 	case strings.HasPrefix(trimmed, "UPDATE if3110_platform.batch_checkpoints") && strings.Contains(trimmed, "committed_batches = $2"):
 		phase := CommitPhase(args[0].Value.(string))
 		committedBatches := int(args[1].Value.(int64))
+		if db.failOnCheckpointBatchNo > 0 && committedBatches == db.failOnCheckpointBatchNo {
+			db.failOnCheckpointBatchNo = 0
+			return nil, errors.New("simulated failpoint before batch_checkpoints commit")
+		}
 		committedRows := args[2].Value.(int64)
 		lastCursor := args[3].Value.(int64)
 		updatedAt := args[4].Value.(time.Time)
