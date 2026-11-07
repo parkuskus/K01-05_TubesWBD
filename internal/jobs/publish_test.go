@@ -824,7 +824,10 @@ func TestPublisherAdapterContract(t *testing.T) {
 func TestPublishIntegrationPostgres(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("TEST_PLATFORM_DATABASE_URL"))
 	if dsn == "" {
-		t.Skip("TEST_PLATFORM_DATABASE_URL not set; skipping live Postgres integration test")
+		dsn = strings.TrimSpace(os.Getenv("PLATFORM_TEST_DATABASE_URL"))
+	}
+	if dsn == "" {
+		t.Skip("TEST_PLATFORM_DATABASE_URL / PLATFORM_TEST_DATABASE_URL not set; skipping live Postgres integration test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

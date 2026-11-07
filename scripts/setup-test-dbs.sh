@@ -24,9 +24,9 @@ psql_admin -d postgres <<-EOSQL
 	DO \$\$
 	BEGIN
 		IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
-			CREATE ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' CREATEDB;
+			CREATE ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' NOSUPERUSER CREATEDB CREATEROLE;
 		ELSE
-			ALTER ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' CREATEDB;
+			ALTER ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_PASSWORD}' NOSUPERUSER CREATEDB CREATEROLE;
 		END IF;
 
 		IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${RO_ROLE}') THEN
@@ -36,6 +36,7 @@ psql_admin -d postgres <<-EOSQL
 		END IF;
 	END
 	\$\$;
+	ALTER ROLE ${APP_ROLE} SET createrole_self_grant = 'set, inherit';
 EOSQL
 
 for db in platform_test target_test target_test_a target_test_b; do

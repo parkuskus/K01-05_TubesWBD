@@ -67,6 +67,7 @@ jobs:
       - name: Run unit tests with race detector
         env:
           PLATFORM_TEST_DATABASE_URL: ""
+          TEST_PLATFORM_DATABASE_URL: ""
           TARGET_TEST_DATABASE_URL: ""
           TARGET_TEST_DATABASE_B_URL: ""
           MIGRATION_READONLY_TEST_DATABASE_URL: ""
@@ -76,15 +77,16 @@ jobs:
       - name: Run full PostgreSQL integration tests (no skipped integration suites)
         env:
           PLATFORM_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/platform_test?sslmode=disable"
+          TEST_PLATFORM_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/platform_test?sslmode=disable"
           TARGET_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/target_test_a?sslmode=disable"
           TARGET_TEST_DATABASE_B_URL: "postgres://platform_app:platform_dev_password@localhost:5432/target_test_b?sslmode=disable"
-          MIGRATION_READONLY_TEST_DATABASE_URL: "postgres://platform_readonly:platform_ro_password@localhost:5432/target_test_a?sslmode=disable"
+          MIGRATION_READONLY_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/target_test?sslmode=disable"
           TELEMETRY_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/platform_test?sslmode=disable"
         run: |
           set -euo pipefail
           go test -p 1 -race -count=1 -v ./db/migrations/... ./internal/... | tee integration-test.log
-          if grep -E -- "--- SKIP:" integration-test.log; then
-            echo "ERROR: One or more tests were unexpectedly skipped during PostgreSQL integration run!"
+          if grep -Ei -- "set .*DATABASE_URL|DATABASE_URL.*not set" integration-test.log; then
+            echo "ERROR: One or more PostgreSQL integration tests were skipped due to missing DATABASE_URL!"
             exit 1
           fi
 

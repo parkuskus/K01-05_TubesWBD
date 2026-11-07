@@ -17,8 +17,8 @@ Dibuat untuk Tugas Besar Milestone 1 IF3110 Pengembangan Aplikasi Berbasis Web.
 - **Administrasi Platform (Platform Admin)**
   Kelola akun pengguna, grup, anggota grup, serta pembagian hak akses grup ke setiap database target (`View Only` atau `View + Edit`). Perubahan yang mengurangi hak akses otomatis mencabut sesi aktif pengguna terdampak.
 - **Manajemen Koneksi Database Target**
-  Simpan, uji koneksi, ubah, dan hapus koneksi PostgreSQL target. Password database disimpan terenkripsi menggunakan AES-256-GCM.
 - **Database Schema & Data Viewer**
+  Simpan, uji koneksi, ubah, dan hapus koneksi PostgreSQL target. Password database disimpan terenkripsi menggunakan AES-256-GCM.
   Jelajahi schema, daftar tabel, detail kolom, constraint, index, serta isi tabel secara read-only dengan pagination.
 - **SQL Migration Management**
   Buat draft migration, tinjau SQL sebelum eksekusi, dan jalankan migration secara transaksional (`COMMIT` untuk `APPLIED`, `ROLLBACK` untuk `FAILED`) dengan urutan versi linear yang dicatat pada `if3110_platform.migration_history`.

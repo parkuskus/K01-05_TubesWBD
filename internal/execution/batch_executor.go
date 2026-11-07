@@ -552,7 +552,7 @@ func (e *BatchExecutor) runSingleUpBatchTx(
 	// 1. Lock target rows in this keyset window and record before_data into batch_recovery_rows.
 	captureBeforeSQL := fmt.Sprintf(
 		`INSERT INTO if3110_platform.batch_recovery_rows (execution_id, batch_no, row_id, before_data, after_data)
-		 SELECT $1, $2, s.row_id, to_jsonb(t.*), to_jsonb(t.*)
+		 SELECT $1, $2, s.row_id, to_jsonb(t), to_jsonb(t)
 		 FROM if3110_platform.batch_scope_rows s
 		 JOIN %s.%s t ON t.%s::bigint = s.row_id
 		 WHERE s.execution_id = $1
@@ -579,7 +579,7 @@ func (e *BatchExecutor) runSingleUpBatchTx(
 	// 3. Record after_data in batch_recovery_rows so reverse compensation can verify post-images.
 	captureAfterSQL := fmt.Sprintf(
 		`UPDATE if3110_platform.batch_recovery_rows r
-		 SET after_data = to_jsonb(t.*)
+		 SET after_data = to_jsonb(t)
 		 FROM %s.%s t
 		 WHERE r.execution_id = $1
 		   AND r.batch_no = $2
