@@ -1,4 +1,4 @@
-.PHONY: generate migrate run worker test test-unit test-integration setup-test-dbs
+.PHONY: generate migrate run worker seed-bench test test-unit test-integration setup-test-dbs
 
 generate:
 	go run github.com/a-h/templ/cmd/templ@v0.3.960 generate
@@ -11,6 +11,9 @@ run: generate
 
 worker:
 	go run ./cmd/worker
+
+seed-bench:
+	go run ./cmd/seedbench
 
 test: generate
 	go test ./...
