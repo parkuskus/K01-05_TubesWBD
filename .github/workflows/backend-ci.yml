@@ -1,0 +1,92 @@
+name: Backend CI (Unit, Race, and Postgres Integration)
+
+on:
+  pull_request:
+    branches: [main, milestone/2]
+  push:
+    branches: [main, milestone/2]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-integration:
+    name: Go Vet, Race, and PostgreSQL Integration Suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Install PostgreSQL client tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
+      - name: Provision disposable PostgreSQL databases (platform_test, target_test_a, target_test_b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGADMIN_USER: postgres
+          PGPASSWORD: postgres_ci_password
+          APP_ROLE: platform_app
+          APP_PASSWORD: platform_dev_password
+          RO_ROLE: platform_readonly
+          RO_PASSWORD: platform_ro_password
+        run: |
+          bash ./scripts/setup-test-dbs.sh
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run unit tests with race detector
+        env:
+          PLATFORM_TEST_DATABASE_URL: ""
+          TARGET_TEST_DATABASE_URL: ""
+          TARGET_TEST_DATABASE_B_URL: ""
+          MIGRATION_READONLY_TEST_DATABASE_URL: ""
+          TELEMETRY_TEST_DATABASE_URL: ""
+        run: go test -race -count=1 ./internal/...
+
+      - name: Run full PostgreSQL integration tests (no skipped integration suites)
+        env:
+          PLATFORM_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/platform_test?sslmode=disable"
+          TARGET_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/target_test_a?sslmode=disable"
+          TARGET_TEST_DATABASE_B_URL: "postgres://platform_app:platform_dev_password@localhost:5432/target_test_b?sslmode=disable"
+          MIGRATION_READONLY_TEST_DATABASE_URL: "postgres://platform_readonly:platform_ro_password@localhost:5432/target_test_a?sslmode=disable"
+          TELEMETRY_TEST_DATABASE_URL: "postgres://platform_app:platform_dev_password@localhost:5432/platform_test?sslmode=disable"
+        run: |
+          set -euo pipefail
+          go test -p 1 -race -count=1 -v ./db/migrations/... ./internal/... | tee integration-test.log
+          if grep -E -- "--- SKIP:" integration-test.log; then
+            echo "ERROR: One or more tests were unexpectedly skipped during PostgreSQL integration run!"
+            exit 1
+          fi
+
+      - name: Build all binaries (cmd/web, cmd/migrate, cmd/worker, cmd/seedbench)
+        run: go build ./...
