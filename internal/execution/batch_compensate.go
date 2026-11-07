@@ -281,7 +281,12 @@ func (e *BatchExecutor) runSingleDownBatchTx(
 	quotedPK string,
 	scopedDownSQL string,
 	nextCompensatedCount int,
-) (int64, contracts.JobStatus, string, string) {
+) (revertedRows int64, batchStatus contracts.JobStatus, errCode string, errMsg string) {
+	ctx, finishBatchSpan := startBatchSpan(ctx, batchNo, env.Claimed.Job.Plan.Batch.BatchSize, env.Claimed.Job.Direction)
+	defer func() {
+		finishBatchSpan(revertedRows, batchStatus, errCode, errMsg)
+	}()
+
 	tx, err := env.Conn.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, contracts.JobStatusPartiallyReverted, extractSQLState(err, "COMPENSATE_BEGIN_TX_ERROR"), SanitizeExecutionError(err)
@@ -299,7 +304,7 @@ func (e *BatchExecutor) runSingleDownBatchTx(
 
 	// 1. Lock the batch's target rows and verify that their current values still match after_data (BATCH-05).
 	if err := verifyBatchPostImagesInTx(ctx, tx, originID, batchNo, quotedSchema, quotedTable, quotedPK); err != nil {
-		_ = tx.Rollback()
+		rollbackTxWithTelemetry(ctx, tx, scopedDownSQL, err)
 		code := extractSQLState(err, "COMPENSATE_VERIFY_ERROR")
 		if errors.Is(err, ErrUnsafeBatchCompensation) {
 			code = "UNSAFE_BATCH_COMPENSATION"
@@ -308,17 +313,10 @@ func (e *BatchExecutor) runSingleDownBatchTx(
 	}
 
 	// 2. Execute the scoped DownSQL to restore before_data for this batch.
-	res, err := tx.ExecContext(ctx, scopedDownSQL, string(originID), batchNo)
+	_, affected, err := execUserSQLWithTelemetry(ctx, tx, scopedDownSQL, string(originID), batchNo)
 	if err != nil {
-		_ = tx.Rollback()
+		rollbackTxWithTelemetry(ctx, tx, scopedDownSQL, err)
 		return 0, contracts.JobStatusPartiallyReverted, extractSQLState(err, "COMPENSATE_DOWN_SQL_ERROR"), SanitizeExecutionError(err)
-	}
-
-	var affected int64
-	if res != nil {
-		if n, err := res.RowsAffected(); err == nil && n >= 0 {
-			affected = n
-		}
 	}
 
 	now := time.Now().UTC()
@@ -382,7 +380,7 @@ func (e *BatchExecutor) runSingleDownBatchTx(
 	}
 
 	// 5. Commit this reverse batch transaction!
-	if err := tx.Commit(); err != nil {
+	if err := commitTxWithTelemetry(ctx, tx, scopedDownSQL, affected); err != nil {
 		if ClassifyCommitError(err) == ErrorCategoryUnknownCommit {
 			return 0, contracts.JobStatusUnknown, extractSQLState(err, "COMPENSATE_COMMIT_UNKNOWN"), SanitizeExecutionError(err)
 		}

@@ -443,7 +443,12 @@ func (e *BatchExecutor) runSingleUpBatchTx(
 	quotedPK string,
 	scopedUpdateSQL string,
 	committedRowsBefore int64,
-) (int64, contracts.JobStatus, string, string) {
+) (batchRowsAffected int64, batchStatus contracts.JobStatus, errCode string, errMsg string) {
+	ctx, finishBatchSpan := startBatchSpan(ctx, batchNo, env.Claimed.Job.Plan.Batch.BatchSize, env.Claimed.Job.Direction)
+	defer func() {
+		finishBatchSpan(batchRowsAffected, batchStatus, errCode, errMsg)
+	}()
+
 	tx, err := env.Conn.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, contracts.JobStatusPartial, extractSQLState(err, "BATCH_BEGIN_TX_ERROR"), SanitizeExecutionError(err)
@@ -480,17 +485,10 @@ func (e *BatchExecutor) runSingleUpBatchTx(
 	}
 
 	// 2. Execute the user's UPDATE scoped strictly to the rows of (targetExecutionID, batchNo).
-	res, err := tx.ExecContext(ctx, scopedUpdateSQL, string(targetExecutionID), batchNo)
+	_, affected, err := execUserSQLWithTelemetry(ctx, tx, scopedUpdateSQL, string(targetExecutionID), batchNo)
 	if err != nil {
-		_ = tx.Rollback()
+		rollbackTxWithTelemetry(ctx, tx, scopedUpdateSQL, err)
 		return 0, contracts.JobStatusPartial, extractSQLState(err, "BATCH_UPDATE_SQL_ERROR"), SanitizeExecutionError(err)
-	}
-
-	var affected int64
-	if res != nil {
-		if n, err := res.RowsAffected(); err == nil && n >= 0 {
-			affected = n
-		}
 	}
 
 	// 3. Record after_data in batch_recovery_rows so reverse compensation can verify post-images.
@@ -573,7 +571,7 @@ func (e *BatchExecutor) runSingleUpBatchTx(
 	}
 
 	// 6. Commit this batch transaction!
-	if err := tx.Commit(); err != nil {
+	if err := commitTxWithTelemetry(ctx, tx, scopedUpdateSQL, affected); err != nil {
 		if ClassifyCommitError(err) == ErrorCategoryUnknownCommit {
 			return 0, contracts.JobStatusUnknown, extractSQLState(err, "BATCH_COMMIT_UNKNOWN"), SanitizeExecutionError(err)
 		}
