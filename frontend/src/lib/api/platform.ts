@@ -9,6 +9,11 @@ export type PlatformUser = {
 export type Group = { id: string; name: string; leader_id: string | null };
 export type Grant = { database_id: string; level: 1 | 2 };
 export type GroupDetail = { group: Group; members: PlatformUser[]; grants: Grant[] };
+type GroupDTO = Omit<Group, "leader_id"> & { leader_user_id: string | null };
+const groupValue = ({ leader_user_id, ...group }: GroupDTO): Group => ({
+  ...group,
+  leader_id: leader_user_id,
+});
 
 export function platformApi(api: ApiClient) {
   const groupPath = (id: string) => `/groups/${resourceID(id)}`;
@@ -22,8 +27,18 @@ export function platformApi(api: ApiClient) {
     setPassword: (id: string, password: string) =>
       api.request(`${userPath(id)}/password`, json("PUT", { password })),
     deleteUser: (id: string) => api.request(userPath(id), { method: "DELETE" }),
-    groups: (signal?: AbortSignal) => resource<{ groups: Group[] }>(api, "/groups", signal),
-    group: (id: string, signal?: AbortSignal) => resource<GroupDetail>(api, groupPath(id), signal),
+    groups: async (signal?: AbortSignal) => {
+      const data = await resource<{ groups: GroupDTO[] }>(api, "/groups", signal);
+      return { groups: data.groups.map(groupValue) };
+    },
+    group: async (id: string, signal?: AbortSignal): Promise<GroupDetail> => {
+      const [detail, members, grants] = await Promise.all([
+        resource<{ group: GroupDTO }>(api, groupPath(id), signal),
+        resource<{ members: PlatformUser[] }>(api, `${groupPath(id)}/members`, signal),
+        resource<{ grants: Grant[] }>(api, `${groupPath(id)}/grants`, signal),
+      ]);
+      return { group: groupValue(detail.group), members: members.members, grants: grants.grants };
+    },
     createGroup: (name: string) => api.request("/groups", json("POST", { name })),
     renameGroup: (id: string, name: string) => api.request(groupPath(id), json("PATCH", { name })),
     deleteGroup: (id: string) => api.request(groupPath(id), { method: "DELETE" }),
