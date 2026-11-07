@@ -20,9 +20,11 @@ import { resourceID } from "@/lib/api/resources";
 export function DatabaseHeading({
   database,
   diff = false,
+  section,
 }: {
   database: DatabaseChoice;
   diff?: boolean;
+  section?: "migrations" | "history";
 }) {
   return (
     <>
@@ -42,8 +44,8 @@ export function DatabaseHeading({
       >
         <Link
           href={`/databases/${resourceID(database.id)}`}
-          aria-current={!diff ? "page" : undefined}
-          className={`inline-flex min-h-12 items-center border-b-2 ${!diff ? "border-accent font-medium text-accent" : "border-transparent text-ink-secondary hover:text-accent"}`}
+          aria-current={!diff && !section ? "page" : undefined}
+          className={`inline-flex min-h-12 items-center border-b-2 ${!diff && !section ? "border-accent font-medium text-accent" : "border-transparent text-ink-secondary hover:text-accent"}`}
         >
           Schema & data
         </Link>
@@ -53,6 +55,27 @@ export function DatabaseHeading({
           className={`inline-flex min-h-12 items-center border-b-2 ${diff ? "border-accent font-medium text-accent" : "border-transparent text-ink-secondary hover:text-accent"}`}
         >
           Schema diff
+        </Link>
+        {(
+          [
+            ["migrations", "Migration"],
+            ["history", "History"],
+          ] as const
+        ).map(([key, label]) => (
+          <Link
+            key={key}
+            href={`/databases/${resourceID(database.id)}/${key}`}
+            aria-current={section === key ? "page" : undefined}
+            className={`inline-flex min-h-12 items-center border-b-2 ${section === key ? "border-accent font-medium text-accent" : "border-transparent text-ink-secondary hover:text-accent"}`}
+          >
+            {label}
+          </Link>
+        ))}
+        <Link
+          href={`/activity?database=${resourceID(database.id)}`}
+          className="inline-flex min-h-12 items-center text-ink-secondary hover:text-accent"
+        >
+          Review & job
         </Link>
       </nav>
     </>
