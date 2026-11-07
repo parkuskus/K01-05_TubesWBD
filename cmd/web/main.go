@@ -13,6 +13,7 @@ import (
 
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/api"
+	"if3110.local/db-platform/internal/approval"
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
@@ -102,6 +103,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure definition API: %w", err)
 	}
+	approvals, err := approval.NewService(db, platformService, definitions)
+	if err != nil {
+		return fmt.Errorf("configure migration approvals: %w", err)
+	}
+	approvalAPI, err := api.NewApprovalHandler(approvals, sessions)
+	if err != nil {
+		return fmt.Errorf("configure approval API: %w", err)
+	}
 	apiRoutes := http.NewServeMux()
 	apiRoutes.Handle("/api/v1/users", platformAPI)
 	apiRoutes.Handle("/api/v1/users/", platformAPI)
@@ -113,6 +122,8 @@ func run() error {
 	apiRoutes.Handle("/api/v1/databases/", databaseAPI)
 	apiRoutes.Handle("/api/v1/databases/{id}/migrations", definitionAPI)
 	apiRoutes.Handle("/api/v1/databases/{id}/migrations/", definitionAPI)
+	apiRoutes.Handle("/api/v1/databases/{id}/operation-requests", approvalAPI)
+	apiRoutes.Handle("/api/v1/operation-requests/", approvalAPI)
 	apiRoutes.Handle("/api/", apiHandler)
 	handler, err := web.New(web.Config{
 		Authenticator:   authenticator,
