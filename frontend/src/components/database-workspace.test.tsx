@@ -1,72 +1,70 @@
-// @vitest-environment jsdom
-
-import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createApiClient } from "@/lib/api/client";
 import { DatabaseWorkspace } from "./database-workspace";
-import { WorkspaceProvider } from "./workspace-provider";
-import type { WorkspaceSnapshot } from "@/lib/workspace/types";
 
-const workspace: WorkspaceSnapshot = {
-  source: "connected",
-  activity: [],
-  databases: [
-    {
-      id: "1",
-      name: "primary",
-      host: "localhost",
-      port: 5432,
-      database: "primary",
-      environment: "Development",
-      schemas: 1,
-      tables: 1,
-      access: "View + Edit",
-    },
-    {
-      id: "2",
-      name: "reporting",
-      host: "localhost",
-      port: 5432,
-      database: "reporting",
-      environment: "Staging",
-      schemas: 1,
-      tables: 1,
-      access: "View Only",
-    },
-  ],
-};
+const api = createApiClient();
+const identity = { id: "1", username: "admin", is_platform_admin: true };
+vi.mock("@/components/auth-provider", () => ({ useAuth: () => ({ api, user: identity }) }));
 
-afterEach(cleanup);
-
-it("combines search, environment and access filters without affecting the source data", async () => {
-  const user = userEvent.setup();
+function mount() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   render(
-    <WorkspaceProvider snapshot={workspace}>
+    <QueryClientProvider client={client}>
       <DatabaseWorkspace />
-    </WorkspaceProvider>,
+    </QueryClientProvider>,
   );
-  const databases = within(screen.getByRole("region", { name: "Daftar database" }));
-  await user.selectOptions(
-    screen.getByRole("combobox", { name: "Lingkungan database" }),
-    "Staging",
-  );
-  expect(databases.getByRole("button", { name: "reporting" })).toBeTruthy();
-  expect(databases.queryByRole("button", { name: "primary" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: /Dapat diedit/ }));
-  expect(databases.getByText("Database tidak ditemukan")).toBeTruthy();
-  await user.click(databases.getByRole("button", { name: "Reset filter" }));
-  await user.type(screen.getByRole("searchbox", { name: "Cari database" }), "primary");
-  expect(databases.getByRole("button", { name: "primary" })).toBeTruthy();
-  expect(databases.queryByRole("button", { name: "reporting" })).toBeNull();
-  expect(workspace.databases).toHaveLength(2);
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
 });
 
-it("shows a real disconnected state instead of filling production with sample records", () => {
-  render(
-    <WorkspaceProvider>
-      <DatabaseWorkspace />
-    </WorkspaceProvider>,
+it("loads authorized databases and combines name and access filters", async () => {
+  const records = [
+    { id: "1", name: "primary", access_level: 2, capabilities: { create_migration: true } },
+    { id: "2", name: "reporting", access_level: 1, capabilities: { create_migration: false } },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(Response.json({ data: { databases: records } })),
   );
-  expect(screen.getByText("Layanan belum terhubung")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "primary" })).toBeNull();
+  const user = userEvent.setup();
+  mount();
+  expect((await screen.findByRole("link", { name: "primary" })).getAttribute("href")).toBe(
+    "/databases/1",
+  );
+  await user.selectOptions(screen.getByRole("combobox", { name: "Hak akses database" }), "1");
+  expect(screen.queryByRole("link", { name: "primary" })).toBeNull();
+  await user.type(screen.getByRole("searchbox", { name: "Cari database" }), "primary");
+  expect(screen.getByText("Database tidak ditemukan")).toBeTruthy();
+  expect(records).toHaveLength(2);
+});
+
+it("keeps connection administration separate from target access for an admin without grants", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: { databases: [] } })));
+  mount();
+  expect(await screen.findByText("Belum ada database yang dapat diakses")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Kelola koneksi" }).getAttribute("href")).toBe(
+    "/connections",
+  );
+  expect(screen.queryByRole("button", { name: "Tambah database" })).toBeNull();
+});
+
+it("reports a missing API and allows a real retry without manufacturing database records", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ error: { code: "NOT_FOUND" } }, { status: 404 }))
+    .mockResolvedValueOnce(Response.json({ data: { databases: [] } }));
+  vi.stubGlobal("fetch", fetcher);
+  mount();
+  expect(await screen.findByText("Data atau layanan belum tersedia")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Coba lagi" }));
+  expect(await screen.findByText("Belum ada database yang dapat diakses")).toBeTruthy();
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
 });

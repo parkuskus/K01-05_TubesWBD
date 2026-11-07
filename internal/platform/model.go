@@ -10,8 +10,9 @@ type User struct {
 }
 
 type Group struct {
-	ID   contracts.GroupID
-	Name string
+	ID           contracts.GroupID
+	Name         string
+	LeaderUserID *contracts.UserID
 }
 
 type Grant struct {

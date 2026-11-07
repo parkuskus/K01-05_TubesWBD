@@ -28,6 +28,9 @@ func BuildBatchCompensateSQL(downSQL string, cfg contracts.BatchConfig) (string,
 	if err := cfg.Validate(); err != nil {
 		return "", err
 	}
+	if !batchUpdateTargetMatches(downSQL, cfg) {
+		return "", ErrInvalidBatchUpdateSQL
+	}
 	quotedPK, err := QuoteIdentifier(cfg.PrimaryKeyColumn)
 	if err != nil {
 		return "", err

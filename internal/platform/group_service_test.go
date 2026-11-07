@@ -162,3 +162,32 @@ func TestListMembersReturnsNoHash(t *testing.T) {
 	}
 	// Public User has no password field; the repository query is checked by the PostgreSQL test.
 }
+func (f *fakeGroups) setLeader(context.Context, int64, int64, int64) error {
+	if err := f.allowed(); err != nil {
+		return err
+	}
+	f.called = true
+	return nil
+}
+func (f *fakeGroups) policyVersion(context.Context) (int64, error) { return 1, nil }
+
+func TestSetGroupLeaderRequiresValidIDsAndAdmin(t *testing.T) {
+	f := &fakeGroups{}
+	s := &Service{groups: f}
+	ctx := context.Background()
+	if err := s.SetGroupLeader(ctx, "1", "2", "3"); !errors.Is(err, contracts.ErrForbidden) {
+		t.Fatalf("ordinary user: %v", err)
+	}
+	f.admin = true
+	for _, ids := range [][3]string{{"0", "2", "3"}, {"1", "0", "3"}, {"1", "2", "0"}, {"1", "bad", "3"}} {
+		if err := s.SetGroupLeader(ctx, contracts.UserID(ids[0]), contracts.GroupID(ids[1]), contracts.UserID(ids[2])); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("invalid ID %v: %v", ids, err)
+		}
+	}
+	if f.called {
+		t.Fatal("invalid request reached repository")
+	}
+	if err := s.SetGroupLeader(ctx, "1", "2", "3"); err != nil || !f.called {
+		t.Fatalf("valid leader not set: %v", err)
+	}
+}

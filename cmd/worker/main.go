@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"if3110.local/db-platform/db/migrations"
+	"if3110.local/db-platform/internal/approval"
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
+	"if3110.local/db-platform/internal/definition"
 	"if3110.local/db-platform/internal/execution"
 	"if3110.local/db-platform/internal/jobs"
 	"if3110.local/db-platform/internal/platform"
@@ -75,9 +77,17 @@ func run() error {
 	dbManager.SetExecutorTimeout(cfg.TargetExecutionTimeout)
 
 	jobStore := jobs.NewPostgresJobStore(db).WithDefaultMaxRetries(cfg.JobMaxRetries)
-	gateStore := execution.NewPostgresGateStore(db)
-	revalidator := execution.NewPlatformRevalidator(db, platformService, gateStore)
-	executor := execution.NewDispatchExecutor(gateStore, jobStore)
+	definitions, err := definition.NewService(db, platformService)
+	if err != nil {
+		return fmt.Errorf("configure migration definitions: %w", err)
+	}
+	approvals, err := approval.NewService(db, platformService, definitions)
+	if err != nil {
+		return fmt.Errorf("configure operation revalidation: %w", err)
+	}
+	gates := execution.NewPostgresGateStore(db)
+	modeExecutor := execution.NewModeDispatchExecutor(execution.NewOrdinaryExecutor(), execution.NewBatchExecutor(gates, jobStore))
+	executor := execution.NewRecoveryExecutor(modeExecutor, gates)
 
 	worker, err := execution.NewWorker(execution.WorkerConfig{
 		WorkerID:          cfg.WorkerID,
@@ -89,7 +99,7 @@ func run() error {
 		Queue:             jobStore,
 		ConnProvider:      dbManager,
 		HeadReader:        execution.TargetHeadReader{},
-		Revalidator:       revalidator,
+		Revalidator:       approvals,
 		Executor:          executor,
 		Logger:            logger,
 	})
@@ -117,4 +127,3 @@ func run() error {
 	logger.Info("worker stopped gracefully", slog.String("worker_id", cfg.WorkerID))
 	return nil
 }
-

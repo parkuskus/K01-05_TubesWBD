@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/primitives";
 import { ApiError } from "@/lib/api/client";
-import type { ConnectionInput } from "@/lib/workspace/types";
+import type { Connection, ConnectionInput } from "@/lib/api/databases";
+import { mutationMessage } from "@/components/resource-ui";
 
 const connectionFields = [
   "name",
@@ -24,12 +25,20 @@ const sslModes = [
 ] as const satisfies readonly ConnectionInput["sslmode"][];
 
 type ConnectionFormProps = {
+  initial?: Connection;
   onSubmit?: (input: ConnectionInput) => Promise<void>;
   onSaved?: () => void;
   onCancel?: () => void;
+  onPendingChange?: (pending: boolean) => void;
 };
 
-export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormProps) {
+export function ConnectionForm({
+  initial,
+  onSubmit,
+  onSaved,
+  onCancel,
+  onPendingChange,
+}: ConnectionFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
   const [pending, setPending] = useState(false);
@@ -63,7 +72,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
       nextErrors.port = "Port harus berada di antara 1–65535.";
     if (!input.database) nextErrors.database = "Masukkan nama database.";
     if (!input.username) nextErrors.username = "Masukkan username.";
-    if (!input.password) nextErrors.password = "Masukkan password PostgreSQL.";
+    if (!input.password && !initial) nextErrors.password = "Masukkan password PostgreSQL.";
     else if (
       new TextEncoder().encode(input.password).length > 4096 ||
       input.password.includes("\0")
@@ -74,8 +83,10 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
     setSubmitError("");
     if (Object.keys(nextErrors).length || !sslmode) return;
     setPending(true);
+    onPendingChange?.(true);
     try {
-      await onSubmit({ ...input, sslmode });
+      const { password, ...metadata } = input;
+      await onSubmit({ ...metadata, ...(password ? { password } : {}), sslmode });
       formRef.current?.reset();
       onSaved?.();
     } catch (error) {
@@ -91,10 +102,15 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
         setErrors(fieldErrors);
       } else {
         // Raw connection errors may contain a DSN and must never be echoed.
-        setSubmitError("Koneksi belum dapat disimpan. Periksa isian dan coba lagi.");
+        setSubmitError(
+          error instanceof ApiError && [403, 404, 409, 501].includes(error.status)
+            ? mutationMessage(error)
+            : "Koneksi belum dapat disimpan. Periksa isian dan coba lagi.",
+        );
       }
     } finally {
       setPending(false);
+      onPendingChange?.(false);
     }
   }
 
@@ -106,6 +122,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
           name="name"
           label="Nama koneksi"
           placeholder="Misalnya: Inventory"
+          defaultValue={initial?.name}
           error={errors.name}
           required
           autoComplete="off"
@@ -116,6 +133,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
             name="host"
             label="Host"
             placeholder="db.example.com"
+            defaultValue={initial?.host}
             error={errors.host}
             required
             autoComplete="off"
@@ -126,7 +144,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
             name="port"
             label="Port"
             type="number"
-            defaultValue={5432}
+            defaultValue={initial?.port ?? 5432}
             min={1}
             max={65535}
             error={errors.port}
@@ -138,6 +156,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
           name="database"
           label="Database"
           placeholder="inventory"
+          defaultValue={initial?.database}
           error={errors.database}
           required
           autoComplete="off"
@@ -148,6 +167,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
             id="connection-username"
             name="username"
             label="Username"
+            defaultValue={initial?.username}
             error={errors.username}
             required
             autoComplete="off"
@@ -159,7 +179,8 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
             label="Password"
             type="password"
             error={errors.password}
-            required
+            required={!initial}
+            hint={initial ? "Kosongkan untuk mempertahankan password tersimpan." : undefined}
             maxLength={4096}
             autoComplete="new-password"
           />
@@ -171,7 +192,7 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
           <select
             id="connection-sslmode"
             name="sslmode"
-            defaultValue="require"
+            defaultValue={initial?.sslmode ?? "require"}
             required
             aria-invalid={errors.sslmode ? true : undefined}
             aria-describedby={errors.sslmode ? "connection-sslmode-description" : undefined}
@@ -217,10 +238,13 @@ export function ConnectionForm({ onSubmit, onSaved, onCancel }: ConnectionFormPr
 
 export function AddConnection({ onSubmit }: ConnectionFormProps) {
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
   return (
     <Dialog
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        if (!pending) setOpen(next);
+      }}
       title="Tambah database"
       description="Simpan koneksi PostgreSQL untuk mengakses schema dan mengelola migration."
       trigger={
@@ -232,6 +256,7 @@ export function AddConnection({ onSubmit }: ConnectionFormProps) {
     >
       <ConnectionForm
         onSubmit={onSubmit}
+        onPendingChange={setPending}
         onSaved={() => setOpen(false)}
         onCancel={() => setOpen(false)}
       />

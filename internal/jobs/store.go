@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,6 +122,28 @@ func (a PublisherAdapter) Publish(ctx context.Context, req contracts.EnqueueJobR
 	return job.Summary(), nil
 }
 
+// FindPublished returns an existing idempotent publish for safe HTTP retries.
+func (a PublisherAdapter) FindPublished(ctx context.Context, actorID contracts.UserID, databaseID contracts.DatabaseID, idempotencyKey string) (contracts.JobSummary, bool, error) {
+	if a.store == nil {
+		return contracts.JobSummary{}, false, errors.New("job store is nil")
+	}
+	return a.store.FindPublished(ctx, actorID, databaseID, idempotencyKey)
+}
+
+func (s *PostgresJobStore) FindPublished(ctx context.Context, actorID contracts.UserID, databaseID contracts.DatabaseID, idempotencyKey string) (contracts.JobSummary, bool, error) {
+	if s == nil || s.db == nil {
+		return contracts.JobSummary{}, false, errors.New("job store database is required")
+	}
+	job, err := scanJob(s.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM jobs WHERE actor_id=$1 AND database_id=$2 AND idempotency_key=$3`, actorID, databaseID, strings.TrimSpace(idempotencyKey)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return contracts.JobSummary{}, false, nil
+	}
+	if err != nil {
+		return contracts.JobSummary{}, false, fmt.Errorf("find idempotent job: %w", err)
+	}
+	return job.Summary(), true, nil
+}
+
 // Publish atomically enqueues a validated ExecutionPlan into the durable jobs table.
 //
 // If a job with the same (actor_id, database_id, idempotency_key) already exists:
@@ -214,6 +237,9 @@ func (s *PostgresJobStore) Publish(ctx context.Context, in PublishInput) (publis
 		}
 		return Job{}, ErrIdempotencyConflict
 	}
+	if err := validateAndQueueOperation(ctx, tx, plan); err != nil {
+		return Job{}, err
+	}
 
 	jobID := strings.TrimSpace(string(in.JobID))
 	if jobID == "" {
@@ -292,6 +318,61 @@ func (s *PostgresJobStore) Publish(ctx context.Context, in PublishInput) (publis
 		return Job{}, fmt.Errorf("commit job publish: %w", err)
 	}
 	return created, nil
+}
+
+func validateAndQueueOperation(ctx context.Context, tx *sql.Tx, plan contracts.ExecutionPlan) error {
+	var status, databaseID, migrationID, direction, expectedHead, originExecutionID, revisionChecksum, checksum, createdBy string
+	var revision, reviewRound int
+	var connectionRevision, policyVersion int64
+	err := tx.QueryRowContext(ctx, `SELECT status,database_id::text,migration_id::text,revision,direction,expected_head,origin_execution_id,connection_revision,policy_version,revision_checksum,checksum,review_round,created_by::text FROM operation_requests WHERE id=$1 AND database_id::text=$2 AND migration_id::text=$3 AND revision=$4 AND direction=$5 AND expected_head=$6 AND origin_execution_id=$7 AND connection_revision=$8 AND policy_version=$9 AND created_by::text=$10 FOR UPDATE`, plan.RequestID, plan.TargetDatabaseID, plan.MigrationID, planRevisionNumber(plan.RevisionID), plan.Direction, plan.ExpectedActiveHead, plan.OriginExecutionID, plan.TargetConnectionRevision, plan.PolicyVersion, plan.ActorID).Scan(&status, &databaseID, &migrationID, &revision, &direction, &expectedHead, &originExecutionID, &connectionRevision, &policyVersion, &revisionChecksum, &checksum, &reviewRound, &createdBy)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return contracts.ErrStaleApproval
+		}
+		return fmt.Errorf("lock operation request for publishing: %w", err)
+	}
+	if status != "APPROVED" || databaseID != string(plan.TargetDatabaseID) || migrationID != string(plan.MigrationID) || revisionChecksum == "" || contracts.RevisionID(fmt.Sprintf("%s:%d", migrationID, revision)) != plan.RevisionID || direction != string(plan.Direction) || expectedHead != string(plan.ExpectedActiveHead) || originExecutionID != string(plan.OriginExecutionID) || connectionRevision != plan.TargetConnectionRevision || policyVersion != plan.PolicyVersion || createdBy != string(plan.ActorID) || checksum == "" {
+		return contracts.ErrStaleApproval
+	}
+	var livePolicy, liveConnection int64
+	if err := tx.QueryRowContext(ctx, `SELECT version FROM platform_policy_version WHERE id=true FOR SHARE`).Scan(&livePolicy); err != nil {
+		return fmt.Errorf("read operation policy version: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM database_connections WHERE id=$1 FOR SHARE`, plan.TargetDatabaseID).Scan(&liveConnection); err != nil {
+		return contracts.ErrStaleApproval
+	}
+	var liveRevision int
+	var liveChecksum, definitionState string
+	if err := tx.QueryRowContext(ctx, `SELECT d.current_revision,d.state,r.checksum FROM migration_definitions d JOIN migration_revisions r ON r.migration_id=d.id AND r.revision=d.current_revision WHERE d.database_id=$1 AND d.id=$2 AND (($3='APPLY' AND d.state='IN_REVIEW') OR ($3<>'APPLY' AND d.state='LOCKED')) FOR UPDATE OF d`, plan.TargetDatabaseID, plan.MigrationID, plan.Direction).Scan(&liveRevision, &definitionState, &liveChecksum); err != nil {
+		return contracts.ErrStaleApproval
+	}
+	validDefinitionState := definitionState == "IN_REVIEW" && plan.Direction == contracts.DirectionApply || definitionState == "LOCKED" && plan.Direction != contracts.DirectionApply
+	if livePolicy != plan.PolicyVersion || liveConnection != plan.TargetConnectionRevision || liveRevision != revision || liveChecksum != revisionChecksum || !validDefinitionState {
+		return contracts.ErrStaleApproval
+	}
+	var required, approved int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER (WHERE v.actor_id=r.leader_user_id AND v.migration_revision=o.revision AND v.checksum=o.checksum AND v.decision='APPROVE') FROM operation_requests o JOIN approval_requirements r ON r.request_id=o.id LEFT JOIN approval_votes v ON v.request_id=r.request_id AND v.review_round=o.review_round AND v.group_id=r.group_id WHERE o.id=$1`, plan.RequestID).Scan(&required, &approved); err != nil {
+		return fmt.Errorf("verify operation approvals: %w", err)
+	}
+	if required == 0 || approved != required {
+		return contracts.ErrStaleApproval
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE operation_requests SET status='QUEUED',updated_at=NOW() WHERE id=$1 AND status='APPROVED'`, plan.RequestID); err != nil {
+		return fmt.Errorf("queue approved operation request: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE migration_definitions SET state='LOCKED',attempted_at=COALESCE(attempted_at,NOW()),updated_at=NOW() WHERE id=$1 AND current_revision=$2 AND state IN ('IN_REVIEW','LOCKED')`, plan.MigrationID, revision); err != nil {
+		return fmt.Errorf("lock queued migration definition: %w", err)
+	}
+	return nil
+}
+
+func planRevisionNumber(revisionID contracts.RevisionID) int {
+	parts := strings.Split(string(revisionID), ":")
+	if len(parts) != 2 {
+		return 0
+	}
+	revision, _ := strconv.Atoi(parts[1])
+	return revision
 }
 
 // GetByID fetches a Job by its primary key from the platform database.
@@ -485,4 +566,3 @@ func generateRandomID(prefix string) (string, error) {
 	}
 	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(b[:])), nil
 }
-

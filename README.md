@@ -123,6 +123,31 @@ web/static/          File CSS statis
 
 > **Catatan akses**: Platform Admin mengelola pengguna, grup, dan daftar koneksi database, tetapi tidak otomatis bisa melihat isi database target kecuali akunnya tergabung ke dalam grup yang memiliki akses ke database tersebut. Jika seorang pengguna tergabung di beberapa grup, hak akses tertinggi (`View + Edit` > `View Only`) yang berlaku.
 
+### API JSON database (M2-A03)
+
+Semua route berikut memerlukan sesi; perubahan data memerlukan header `X-CSRF-Token`. Respons memakai envelope `data` atau `error`, dan ID dikirim sebagai string.
+
+| Route `/api/v1` | Akses | Fungsi |
+| :--- | :--- | :--- |
+| `GET/POST /connections`, `GET/PATCH/DELETE /connections/{id}` | Platform Admin | Kelola metadata koneksi; password hanya diterima pada request, tidak dikembalikan. `PATCH` mengirim seluruh metadata dan boleh menghilangkan password untuk mempertahankan password lama. |
+| `POST /connections/{id}/test` | Platform Admin | Ping koneksi tersimpan tanpa menjalankan SQL migration. |
+| `GET /databases`, `GET /databases/{id}` | Pengguna dengan grant | Daftar dan detail nama target beserta level akses, tanpa host atau kredensial. |
+| `GET /databases/{id}/schemas`, `/tables?schema=...`, `/table?schema=...&table=...` | `View Only` / `View + Edit` | Jelajahi struktur target. |
+| `GET /databases/{id}/data?schema=...&table=...&page=1` | `View Only` / `View + Edit` | Data read-only, maksimum 50 baris per halaman; null dan nilai terpotong diberi penanda eksplisit. |
+| `GET /databases/{id}/schema-diff?reference_schema=...&target_schema=...` | `View Only` / `View + Edit` | Pratinjau perubahan dan SQL hasil perbandingan; tidak mengeksekusi SQL atau membuat draft. |
+
+### Definisi dan validasi migration M2 (M2-A04/A05)
+
+`GET/POST /api/v1/databases/{id}/migrations` dan `GET/PATCH /api/v1/databases/{id}/migrations/{migrationId}` menyimpan draft M2 di **database platform**, terpisah dari riwayat migration M1 di database target. Pembacaan memerlukan grant target; pembuatan dan revisi memerlukan `View + Edit`. Mutasi tetap memerlukan sesi dan CSRF. Body `POST` berisi `title`, `up_sql`, `down_sql`, `irreversible`, `reason`, `mode` (`NORMAL`/`BATCH`), `batch_plan` (objek JSON untuk BATCH), dan `notes`. Body `PATCH` menambahkan `expected_revision` untuk menolak edit yang stale. Setiap revisi SQL append-only; percobaan eksekusi akan mengunci definisinya secara permanen. Menyimpan draft BATCH **tidak** berarti SQL batch sudah tervalidasi atau dapat dijalankan; validasi dan approval adalah tahap berikutnya.
+
+`POST /api/v1/databases/{id}/migrations/{migrationId}/validate` mengembalikan laporan validasi untuk revisi tersimpan saat ini (`valid`, `errors`, `warnings`, `compatibility_notes`, revision, checksum); laporan dengan temuan tetap berstatus HTTP 200 dan `valid: false`. Pemeriksaan bersifat statis dan tidak menjalankan SQL atau membuktikan kompatibilitas aplikasi; approver tetap harus menilai catatan kompatibilitas. `batch_plan` memakai field `table_schema`, `table_name`, `primary_key_column`, `scope_where`, dan `batch_size`; batch size yang diterima saat ini 1–10.000 dan SQL harus sesuai template UPDATE yang didukung executor.
+
+### Operation request dan approval seluruh grup (M2-A06)
+
+`POST/GET /api/v1/databases/{id}/operation-requests`, `GET /api/v1/operation-requests/{requestId}`, dan `POST /api/v1/operation-requests/{requestId}/approvals` memulai dan meninjau request tanpa menjalankan atau enqueue SQL. Submit body: `migration_id`, `revision`, `direction` (`APPLY`, `ROLLBACK`, `FORWARD`, `RESUME`, `COMPENSATE`), opsional `expected_head`. Laporan validasi harus lolos. Request membekukan detail migration, checksum, target connection revision, policy version, dan satu requirement untuk **setiap** grup target yang memiliki grant; grup tanpa leader membuat submit gagal. Tidak ada auto-approve, termasuk jika pengaju memimpin grup.
+
+Vote body: `migration_revision`, `review_round`, `group_id`, `checksum`; actor hanya diambil dari session. Hanya leader saat ini yang masih menjadi anggota dan grupnya masih memiliki akses target yang dapat menyetujui. Setiap grup perlu vote tersendiri, termasuk beberapa grup dengan leader yang sama; leader view-only boleh menyetujui tanpa memperoleh hak eksekusi. Request `APPROVED` hanya setelah semua requirement disetujui. Perubahan policy, leader, grant, koneksi, revision, atau checksum menandai request `STALE`; ajukan request baru untuk round baru. Persetujuan bukan izin enqueue/execute; planner dan worker tetap harus revalidasi.
+
 ## Pengujian (Testing)
 
 Untuk menjalankan seluruh unit test:

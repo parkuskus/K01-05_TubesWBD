@@ -1,16 +1,5 @@
 import type { JobStatus } from "@/lib/api/types";
-
-export type DatabaseSummary = {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  database: string;
-  environment: "Development" | "Staging" | "Production";
-  schemas: number;
-  tables: number;
-  access: "View + Edit" | "View Only";
-};
+import type { DatabaseChoice } from "@/lib/api/databases";
 
 export type ActivityItem = {
   id: string;
@@ -27,17 +16,6 @@ export type ActivityItem = {
 
 export type WorkspaceSnapshot = {
   source: "connected" | "disconnected";
-  databases: DatabaseSummary[];
+  databases: DatabaseChoice[];
   activity: ActivityItem[];
-};
-
-// UI input model, mapped to a backend DTO by the future connection adapter.
-export type ConnectionInput = {
-  name: string;
-  host: string;
-  port: number;
-  database: string;
-  username: string;
-  password: string;
-  sslmode: "require" | "disable" | "verify-full";
 };

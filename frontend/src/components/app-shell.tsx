@@ -4,7 +4,17 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Activity, ChevronRight, Database, LogOut, Menu, X } from "lucide-react";
+import {
+  Activity,
+  ChevronRight,
+  Database,
+  LogOut,
+  Menu,
+  Plug,
+  Users,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth-provider";
 import { Brand } from "@/components/brand";
@@ -13,6 +23,11 @@ import { cx } from "@/lib/utils";
 const navigation = [
   { label: "Database", href: "/", icon: Database },
   { label: "Aktivitas", href: "/activity", icon: Activity },
+];
+const administration = [
+  { label: "Pengguna", href: "/platform/users", icon: Users },
+  { label: "Grup", href: "/platform/groups", icon: UsersRound },
+  { label: "Koneksi", href: "/connections", icon: Plug },
 ];
 const desktopMediaQuery = "(min-width: 64rem)";
 
@@ -41,26 +56,30 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </Link>
       <div className="mx-3 mt-9 mb-3 text-xs font-medium text-ink-secondary">Workspace</div>
       <nav aria-label="Navigasi utama" className="space-y-1">
-        {navigation.map(({ label, href, icon: Icon }) => {
-          const active = pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              className={cx(
-                "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm transition-colors",
-                active
-                  ? "bg-accent-soft font-medium text-accent"
-                  : "text-ink-secondary hover:bg-field-subtle hover:text-ink",
-              )}
-            >
-              <Icon className="size-4" strokeWidth={1.7} aria-hidden="true" />
-              {label}
-            </Link>
-          );
-        })}
+        {[...navigation, ...(user?.is_platform_admin ? administration : [])].map(
+          ({ label, href, icon: Icon }) => {
+            const active =
+              pathname === href ||
+              (href === "/" ? pathname.startsWith("/databases/") : pathname.startsWith(`${href}/`));
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onNavigate}
+                aria-current={active ? "page" : undefined}
+                className={cx(
+                  "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm transition-colors",
+                  active
+                    ? "bg-accent-soft font-medium text-accent"
+                    : "text-ink-secondary hover:bg-field-subtle hover:text-ink",
+                )}
+              >
+                <Icon className="size-4" strokeWidth={1.7} aria-hidden="true" />
+                {label}
+              </Link>
+            );
+          },
+        )}
       </nav>
       <div className="mt-auto px-3 pt-8 pb-2">
         <div className="border-t border-line pt-5">
@@ -156,14 +175,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="text-sm text-ink-secondary">Workspace</span>
           <ChevronRight className="size-3 text-ink-secondary" aria-hidden="true" />
           <span className="text-sm font-medium">
-            {pathname === "/activity" ? "Aktivitas" : pathname === "/" ? "Database" : "Halaman"}
+            {pathname === "/activity"
+              ? "Aktivitas"
+              : pathname.startsWith("/platform/users")
+                ? "Pengguna"
+                : pathname.startsWith("/platform/groups")
+                  ? "Grup"
+                  : pathname.startsWith("/connections")
+                    ? "Koneksi"
+                    : "Database"}
           </span>
         </header>
         <main
           ref={mainRef}
           id="main-content"
           tabIndex={-1}
-          className="mx-auto max-w-[1360px] px-4 py-8 outline-none sm:px-8 sm:py-10 lg:px-10 xl:px-14"
+          className="mx-auto max-w-[1360px] min-w-0 px-4 py-8 outline-none sm:px-8 sm:py-10 lg:px-10 xl:px-14"
         >
           {children}
         </main>

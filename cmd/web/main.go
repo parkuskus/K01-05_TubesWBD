@@ -13,9 +13,13 @@ import (
 
 	"if3110.local/db-platform/db/migrations"
 	"if3110.local/db-platform/internal/api"
+	"if3110.local/db-platform/internal/approval"
 	"if3110.local/db-platform/internal/auth"
 	"if3110.local/db-platform/internal/config"
 	"if3110.local/db-platform/internal/database"
+	"if3110.local/db-platform/internal/definition"
+	"if3110.local/db-platform/internal/execution"
+	"if3110.local/db-platform/internal/jobs"
 	"if3110.local/db-platform/internal/migration"
 	"if3110.local/db-platform/internal/platform"
 	"if3110.local/db-platform/internal/telemetry"
@@ -73,6 +77,10 @@ func run() error {
 		return fmt.Errorf("configure database manager: %w", err)
 	}
 	defer dbManager.Close()
+	targetEvidence, err := execution.NewTargetCommitEvidenceReader(dbManager)
+	if err != nil {
+		return fmt.Errorf("configure target commit evidence reader: %w", err)
+	}
 	migrationService, err := migration.NewService(platformService, dbManager)
 	if err != nil {
 		return fmt.Errorf("configure migration service: %w", err)
@@ -81,6 +89,48 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure auth API: %w", err)
 	}
+	platformAPI, err := api.NewPlatformHandler(platformService, platformService, sessions)
+	if err != nil {
+		return fmt.Errorf("configure platform API: %w", err)
+	}
+	viewer, err := database.NewViewer(platformService, dbManager)
+	if err != nil {
+		return fmt.Errorf("configure database viewer: %w", err)
+	}
+	databaseAPI, err := api.NewDatabaseHandler(dbManager, viewer, platformService, sessions)
+	if err != nil {
+		return fmt.Errorf("configure database API: %w", err)
+	}
+	definitions, err := definition.NewService(db, platformService)
+	if err != nil {
+		return fmt.Errorf("configure migration definitions: %w", err)
+	}
+	definitionAPI, err := api.NewDefinitionHandler(definitions, sessions)
+	if err != nil {
+		return fmt.Errorf("configure definition API: %w", err)
+	}
+	approvals, err := approval.NewService(db, platformService, definitions)
+	if err != nil {
+		return fmt.Errorf("configure migration approvals: %w", err)
+	}
+	approvalAPI, err := api.NewApprovalHandler(approvals, sessions, targetEvidence, jobs.NewPostgresJobStore(db).AsContractPublisher())
+	if err != nil {
+		return fmt.Errorf("configure approval API: %w", err)
+	}
+	apiRoutes := http.NewServeMux()
+	apiRoutes.Handle("/api/v1/users", platformAPI)
+	apiRoutes.Handle("/api/v1/users/", platformAPI)
+	apiRoutes.Handle("/api/v1/groups", platformAPI)
+	apiRoutes.Handle("/api/v1/groups/", platformAPI)
+	apiRoutes.Handle("/api/v1/connections", databaseAPI)
+	apiRoutes.Handle("/api/v1/connections/", databaseAPI)
+	apiRoutes.Handle("/api/v1/databases", databaseAPI)
+	apiRoutes.Handle("/api/v1/databases/", databaseAPI)
+	apiRoutes.Handle("/api/v1/databases/{id}/migrations", definitionAPI)
+	apiRoutes.Handle("/api/v1/databases/{id}/migrations/", definitionAPI)
+	apiRoutes.Handle("/api/v1/databases/{id}/operation-requests", approvalAPI)
+	apiRoutes.Handle("/api/v1/operation-requests/", approvalAPI)
+	apiRoutes.Handle("/api/", apiHandler)
 	handler, err := web.New(web.Config{
 		Authenticator:   authenticator,
 		Sessions:        sessions,
@@ -90,7 +140,7 @@ func run() error {
 		Migrations:      migrationService,
 		CSRFKey:         cfg.CSRFKey,
 		SecureCookies:   cfg.SecureCookies,
-		API:             apiHandler,
+		API:             apiRoutes,
 		FrontendOrigins: cfg.FrontendOrigins,
 	})
 	if err != nil {

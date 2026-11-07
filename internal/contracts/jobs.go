@@ -65,8 +65,8 @@ func (s AttemptStatus) IsValid() bool {
 
 // JobCapabilities indicates recovery actions available for a job in the SPA.
 type JobCapabilities struct {
-	RequestResume       bool
-	RequestCompensation bool
+	RequestResume       bool `json:"request_resume"`
+	RequestCompensation bool `json:"request_compensation"`
 }
 
 // EnqueueJobRequest carries an approved ExecutionPlan, client idempotency key,
@@ -79,26 +79,26 @@ type EnqueueJobRequest struct {
 
 // JobSummary represents the operational state and committed batch progress of a queued job.
 type JobSummary struct {
-	JobID               JobID
-	RequestID           OperationRequestID
-	ExecutionID         ExecutionID
-	DatabaseID          DatabaseID
-	Direction           OperationDirection
-	Mode                ExecutionMode
-	Status              JobStatus
-	ActorID             UserID
-	RetryCount          int
-	MaxRetries          int
-	CommittedBatches    int
-	CommittedRows       int64
-	TotalScopeRows      int64
-	LastCommittedCursor string
-	ErrorCode           string
-	ErrorMessage        string
-	Capabilities        JobCapabilities
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	CompletedAt         *time.Time
+	JobID               JobID              `json:"job_id"`
+	RequestID           OperationRequestID `json:"request_id"`
+	ExecutionID         ExecutionID        `json:"execution_id"`
+	DatabaseID          DatabaseID         `json:"database_id"`
+	Direction           OperationDirection `json:"direction"`
+	Mode                ExecutionMode      `json:"mode"`
+	Status              JobStatus          `json:"status"`
+	ActorID             UserID             `json:"actor_id"`
+	RetryCount          int                `json:"retry_count"`
+	MaxRetries          int                `json:"max_retries"`
+	CommittedBatches    int                `json:"committed_batches"`
+	CommittedRows       int64              `json:"committed_rows"`
+	TotalScopeRows      int64              `json:"total_scope_rows"`
+	LastCommittedCursor string             `json:"last_committed_cursor"`
+	ErrorCode           string             `json:"error_code"`
+	ErrorMessage        string             `json:"error_message"`
+	Capabilities        JobCapabilities    `json:"capabilities"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
+	CompletedAt         *time.Time         `json:"completed_at,omitempty"`
 }
 
 // JobAttemptSummary records a single execution attempt (including failures and retries) for a job.
@@ -127,4 +127,3 @@ type JobReader interface {
 	ListJobAttempts(ctx context.Context, jobID JobID) ([]JobAttemptSummary, error)
 	ListDatabaseAttempts(ctx context.Context, databaseID DatabaseID) ([]JobAttemptSummary, error)
 }
-
